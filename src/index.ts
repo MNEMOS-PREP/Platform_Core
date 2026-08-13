@@ -11,7 +11,7 @@
  * rather than a folder you copy.
  */
 
-export const CORE_VERSION = "0.1.0";
+export const CORE_VERSION = "0.2.0";
 
 // ── Provenance: the trust contract ────────────────────────────────────────
 export {
@@ -39,7 +39,16 @@ export {
 export type { DegradedFeature, DependencyStatus } from "./components/DependencyAlert";
 
 // ── App chrome and states ─────────────────────────────────────────────────
-export { Card, ErrorNote, Layout, ModulePlaceholder, Spinner } from "./components/Shell";
+export {
+  Button,
+  Card,
+  EmptyState,
+  ErrorNote,
+  Layout,
+  ModulePlaceholder,
+  Spinner,
+} from "./components/Shell";
+export type { NavItem } from "./components/Shell";
 
 // ── Utilities ─────────────────────────────────────────────────────────────
 export { ApiError, api } from "./lib/api";
