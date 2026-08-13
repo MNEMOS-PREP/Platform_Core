@@ -1,0 +1,162 @@
+# Platform_Core
+
+Shared foundation for the [AI Interviewer](https://github.com/MNEMOS-PREP)
+platform. Every module repo depends on this — one definition of what a sourced
+fact looks like, how the database is wired, and what happens when an upstream
+module isn't running.
+
+**This exists so nineteen repos cannot drift apart.** If each module owned a
+copy of `Provenance.tsx`, the copies would diverge and "every fact shows its
+source" would quietly stop being true in whichever module fell behind — while
+that module's own tests kept passing. Versioning it makes divergence a
+deliberate, visible act.
+
+---
+
+## Install
+
+Pin a tag. Never track `main` from a module repo — that is how you get
+surprise breakage on a Tuesday.
+
+**Frontend**
+
+```json
+{
+  "dependencies": {
+    "@ai/core": "github:MNEMOS-PREP/Platform_Core#v0.1.0"
+  }
+}
+```
+
+**Backend**
+
+```bash
+pip install "ai-core @ git+https://github.com/MNEMOS-PREP/Platform_Core@v0.1.0#subdirectory=python"
+```
+
+Upgrading is deliberate: bump the tag, run your module's tests, commit the
+bump. Your module keeps working on the old version until you choose to move.
+
+---
+
+## What's in it
+
+### Frontend — `@ai/core`
+
+| Export | What it's for |
+|---|---|
+| `SourceChip` | Any fact. Opens the full source list with dates. |
+| `VerificationBadge` | Confirmed / community-reported / reports-disagree |
+| `CommunityTray` | Single-source facts. **Never render these inline.** |
+| `ContestedFact` | Two versions side by side with counts |
+| `StaleBadge` | Old data — shown with its age, never silently |
+| `CompanySaysVsStudentsReport` | Official claims beside lived experience |
+| `DependencyAlert` | Page banner: what's switched off and which module it needs |
+| `DegradedSection` | Inline replacement for a section that couldn't be built |
+| `DependencyTable` | Developer view of upstream health |
+| `Layout` `Card` `Spinner` `ErrorNote` | App chrome and honest loading/error states |
+| `api` `relativeDays` `MODULES` | Fetch wrapper, formatting, module registry |
+
+```tsx
+import { DependencyAlert, SourceChip, Layout } from "@ai/core";
+import "@ai/core/styles.css";
+```
+
+### Backend — `ai_core`
+
+| Module | What it's for |
+|---|---|
+| `ai_core.config` | Settings; `DATABASE_URL` defaults to SQLite |
+| `ai_core.db` | Engine, `create_all()`, `get_session()` dependency |
+| `ai_core.modules_meta` | The 19-module registry, ports, spec paths |
+| `ai_core.dependencies` | Upstream probing and graceful degradation |
+
+---
+
+## The degradation contract
+
+The platform has three rules (see any module's spec). This package encodes the
+second one at the service layer:
+
+> **A missing dependency narrows the SCOPE of what we show, never the quality,
+> and never silently.**
+
+A module must not crash because an upstream is down. It drops the feature that
+needed it, names the missing module, and renders everything else.
+
+```python
+from ai_core.dependencies import DependencyRegistry
+
+deps = DependencyRegistry.from_manifest("module.json")
+
+theta = fetch_theta(candidate_id) if deps.is_available("M04") else None
+page.degraded = deps.degraded()      # -> the UI banner
+```
+
+```tsx
+<DependencyAlert degraded={page.degraded} />
+```
+
+Declare dependencies in your module's `module.json`:
+
+```json
+{
+  "module": "M15",
+  "depends_on": [
+    {
+      "module": "M04",
+      "name": "Skill Graph & MNEMOS Memory",
+      "reason": "candidate theta per topic",
+      "on_missing": "Your preparation — needs M04 to compare you against this drive's bar",
+      "base_url": "http://127.0.0.1:8104",
+      "required": false
+    }
+  ]
+}
+```
+
+`on_missing` is shown to a student. Write it as a sentence they can act on, not
+as an error code.
+
+**Keep `required: false` unless the module genuinely cannot do its job without
+the upstream.** Marking a dependency required turns someone else's outage into
+your outage.
+
+Point at a running instance without editing the manifest:
+
+```bash
+M04_BASE_URL=http://127.0.0.1:8104
+```
+
+---
+
+## Development
+
+```bash
+npm install && npm run typecheck
+
+cd python
+python -m venv .venv
+.venv/Scripts/python -m pip install -e ".[dev]"
+.venv/Scripts/python -m pytest -q
+.venv/Scripts/python -m ruff check .
+```
+
+## Releasing
+
+Changing this package changes every module. Two rules:
+
+1. **Additive changes only within a minor version.** Renaming or removing an
+   export breaks nineteen repos at once.
+2. **Tag every release.** Module repos pin tags; an untagged change is
+   unreachable and an unpinned one is a future outage.
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+Then bump the tag in each module repo when that team is ready — not before.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).

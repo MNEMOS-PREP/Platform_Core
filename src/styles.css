@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/*
+  Design tokens.
+
+  The verification-state palette is the module's core UI contract (M15 §8).
+  Colour is never the only signal: every state also carries a text label, a
+  border, or a heading in the document outline. A student using a screen reader
+  or a monochrome display must be able to tell a confirmed fact from a rumour.
+*/
+
+@theme {
+  --color-ink: oklch(0.22 0.02 260);
+  --color-ink-soft: oklch(0.48 0.015 260);
+  --color-ink-faint: oklch(0.62 0.012 260);
+  --color-surface: oklch(0.99 0.002 260);
+  --color-surface-raised: oklch(1 0 0);
+  --color-line: oklch(0.9 0.008 260);
+
+  --color-brand: oklch(0.52 0.16 262);
+  --color-brand-soft: oklch(0.96 0.02 262);
+
+  /* verification states */
+  --color-confirmed: oklch(0.52 0.13 155);
+  --color-confirmed-soft: oklch(0.96 0.03 155);
+  --color-reported: oklch(0.58 0.13 70);
+  --color-reported-soft: oklch(0.97 0.035 80);
+  --color-contested: oklch(0.55 0.17 25);
+  --color-contested-soft: oklch(0.97 0.03 25);
+  --color-company: oklch(0.5 0.1 300);
+  --color-company-soft: oklch(0.97 0.02 300);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--color-surface);
+    color: var(--color-ink);
+    font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+  /* Stale content is dimmed, but never below readable contrast, and always
+     accompanied by a text age badge — dimming alone is not a message. */
+  .is-stale {
+    opacity: 0.62;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
