@@ -11,7 +11,7 @@
  * rather than a folder you copy.
  */
 
-export const CORE_VERSION = "0.2.0";
+export const CORE_VERSION = "0.3.0";
 
 // ── Provenance: the trust contract ────────────────────────────────────────
 export {
@@ -29,6 +29,10 @@ export type {
   Stance,
   VerificationState,
 } from "./components/Provenance";
+
+// ── Mastery: "not tested" is not zero ─────────────────────────────────────
+export { MasteryBar, NotYetTested, STATE_LABEL, isDisplayable } from "./components/MasteryBar";
+export type { MasteryState, MasteryValue } from "./components/MasteryBar";
 
 // ── Missing-module alerts ─────────────────────────────────────────────────
 export {

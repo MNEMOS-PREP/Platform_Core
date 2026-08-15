@@ -54,6 +54,8 @@ bump. Your module keeps working on the old version until you choose to move.
 | `DependencyAlert` | Page banner: what's switched off and which module it needs |
 | `DegradedSection` | Inline replacement for a section that couldn't be built |
 | `DependencyTable` | Developer view of upstream health |
+| `MasteryBar` | The five mastery states. **Cannot render a number for a state that has none.** |
+| `NotYetTested` | The collapsed count for untested concepts — never a row of empty bars |
 | `Layout` `Card` `Spinner` `ErrorNote` | App chrome and honest loading/error states |
 | `api` `relativeDays` `MODULES` | Fetch wrapper, formatting, module registry |
 
@@ -70,6 +72,48 @@ import "@ai/core/styles.css";
 | `ai_core.db` | Engine, `create_all()`, `get_session()` dependency |
 | `ai_core.modules_meta` | The 19-module registry, ports, spec paths |
 | `ai_core.dependencies` | Upstream probing and graceful degradation |
+| `ai_core.evidence` | `EvidenceRef` + resolution — Rule 3, as a type |
+| `ai_core.concepts` | `Concept`, `ConceptEdge`, `normalise_alias` — the graph's shape |
+| `ai_core.mastery` | The five states, decay, hysteresis. One definition, published. |
+| `ai_core.timeutil` | One UTC clock. SQLite hands back naive datetimes; this is the fix. |
+| `ai_core.schema_repair` | Additive `ALTER TABLE` on startup, so a pull never costs a dev their `dev.db` |
+
+---
+
+## The two contracts added at v0.3.0
+
+Both come from M04 §5, and both are here for the same reason `Provenance.tsx`
+is: more than one module speaks them, and a second interpretation is how the
+promise breaks.
+
+**`EvidenceRef` — why a number is what it is.** M13 produces them, M04 stores
+them, M19 projects over them, M16 renders them. Resolution is the part that
+matters: the artifact must still exist, its checksum must match what was
+recorded at write time, and a quoted span must really be at those offsets.
+
+```python
+from ai_core.evidence import EvidenceRef, resolve
+
+result = resolve(ref, store)
+result.state       # resolved | tombstoned | unresolvable
+result.storable    # tombstoned counts: retention deleting a recording must
+                   # not erase a student's history (M04 EC-4.9)
+```
+
+**The five mastery states — "not tested" is not zero.** Rendered by M04, M05,
+M15, M16 and M19.
+
+```python
+from ai_core.mastery import evaluate
+
+view = evaluate(theta=1.2, se=0.3, n_direct=5, last_evidence_at=then)
+view.state         # not_tested | emerging | weak | adequate | strong
+view.mastery_p     # None when there is nothing to claim — NEVER 0.0
+view.stale         # decayed, but the bar is held open by hysteresis
+```
+
+Decay widens the error bar and never lowers the estimate: a student must never
+appear to get worse by doing nothing.
 
 ---
 
