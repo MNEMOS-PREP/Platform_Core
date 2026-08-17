@@ -27,7 +27,7 @@ surfaces render and none of them may reinterpret. Layout and chrome are not,
 and stay module-local.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 from ai_core.concepts import (
     Concept,
@@ -67,6 +67,7 @@ from ai_core.mastery import (
 from ai_core.modules_meta import MODULES, ModuleMeta, ModuleStatus, all_statuses, module_status
 from ai_core.schema_repair import ensure_schema
 from ai_core.timeutil import as_utc, days_between, utcnow
+from ai_core.versions import UNKNOWN_SHA, VersionStamp
 
 __all__ = [
     "MODULES",
@@ -90,7 +91,9 @@ __all__ = [
     "MasteryView",
     "ModuleMeta",
     "ModuleStatus",
+    "UNKNOWN_SHA",
     "UnresolvableEvidence",
+    "VersionStamp",
     "__version__",
     "all_statuses",
     "as_utc",
