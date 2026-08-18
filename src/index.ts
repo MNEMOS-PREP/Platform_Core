@@ -11,7 +11,13 @@
  * rather than a folder you copy.
  */
 
-export const CORE_VERSION = "0.3.0";
+/**
+ * Must equal `package.json` version and `ai_core.__version__`. It was left at
+ * 0.3.0 across two releases, which is the exact failure this package exists to
+ * prevent, in its own source: a version string that reports a state of the
+ * world it is not in. Move all three in the same commit.
+ */
+export const CORE_VERSION = "0.5.1";
 
 // ── Provenance: the trust contract ────────────────────────────────────────
 export {
