@@ -35,7 +35,17 @@ export interface MasteryValue {
   state: MasteryState;
   /** null unless the state is displayable. NEVER 0 for "we don't know". */
   mastery_p: number | null;
-  n_direct: number;
+  /**
+   * How many times this concept was probed directly.
+   *
+   * OPTIONAL, because not every surface that has a state has an evidence
+   * count. M02 reads a coverage summary, M16 reads a study plan; neither sees
+   * M04's evidence ledger. Requiring it forced those callers to pass a
+   * placeholder, and `n_direct: 0` renders as "tested 0x" underneath a strong
+   * bar - a fabricated fact, in the component built to prevent fabricated
+   * facts. Omit it and the suffix is omitted with it.
+   */
+  n_direct?: number;
   /** Decayed past the display ceiling, held open by hysteresis (§6.5). */
   stale?: boolean;
   last_evidence_at?: string | null;
@@ -99,6 +109,8 @@ function detail(value: MasteryValue): string | null {
   }
   if (value.state === "not_tested") return null;
   if (value.blocks && value.blocks > 1) return `blocks ${value.blocks}`;
+  // No count, no claim about a count.
+  if (value.n_direct === undefined) return null;
   return `tested ${value.n_direct}×`;
 }
 
