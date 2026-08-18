@@ -37,11 +37,11 @@ class ModuleMeta:
 
 # id   name                                  slug            folder                        phase  owner    built
 _TABLE = [
-    ("M01", "Resume Ingestion & Claim Extraction", "resume",        "M01_Resume_Ingestion",       "1",   "E3",     False),
-    ("M02", "JD Parser & Coverage Planner",        "jd",            "M02_JD_Parser",              "1",   "E3",     False),
+    ("M01", "Resume Ingestion & Claim Extraction", "resume",        "M01_Resume_Ingestion",       "1",   "E3",     True),
+    ("M02", "JD Parser & Coverage Planner",        "jd",            "M02_JD_Parser",              "1",   "E3",     True),
     ("M03", "GitHub Analyzer & Forensics",         "github",        "M03_GitHub_Analyzer",        "1",   "E3",     False),
     ("M04", "Skill Graph & MNEMOS Memory",         "skill-graph",   "M04_Skill_Graph_Memory",     "1",   "E3",     True),
-    ("M05", "Question Intelligence",               "questions",     "M05_Question_Intelligence",  "1-2", "E3",     False),
+    ("M05", "Question Intelligence",               "questions",     "M05_Question_Intelligence",  "1-2", "E3",     True),
     ("M06", "Mock Interview Engine",               "mock",          "M06_Mock_Interview_Engine",  "1-2", "E2",     False),
     ("M07", "Live Coding & Auto-Judge",            "coding",        "M07_Live_Coding",            "1",   "E2",     False),
     ("M08", "System Design Canvas",                "system-design", "M08_System_Design_Canvas",   "2",   "E2",     False),
