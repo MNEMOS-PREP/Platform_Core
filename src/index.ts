@@ -17,7 +17,7 @@
  * prevent, in its own source: a version string that reports a state of the
  * world it is not in. Move all three in the same commit.
  */
-export const CORE_VERSION = "0.6.0";
+export const CORE_VERSION = "0.7.0";
 
 // ── Provenance: the trust contract ────────────────────────────────────────
 export {
@@ -48,17 +48,16 @@ export {
 } from "./components/DependencyAlert";
 export type { DegradedFeature, DependencyStatus } from "./components/DependencyAlert";
 
-// ── App chrome and states ─────────────────────────────────────────────────
-export {
-  Button,
-  Card,
-  EmptyState,
-  ErrorNote,
-  Layout,
-  ModulePlaceholder,
-  Spinner,
-} from "./components/Shell";
-export type { NavItem } from "./components/Shell";
+// ── The icon set ──────────────────────────────────────────────────────────
+export { Icon, ICON_NAMES, IS_APPLE, MOD_KEY } from "./components/Icon";
+export type { IconName } from "./components/Icon";
+
+// ── Shared states ─────────────────────────────────────────────────────────
+// `Layout`, `ModulePlaceholder` and `NavItem` are gone in 0.7.0. They were
+// imported by nothing, and `Layout` asserted a shared frame that the one module
+// with a UI had already replaced — see the docblock in Shell.tsx for the
+// decision. A module owns its own chrome; this package owns the vocabulary.
+export { Button, Card, EmptyState, ErrorNote, Spinner } from "./components/Shell";
 
 // ── Utilities ─────────────────────────────────────────────────────────────
 export { ApiError, api } from "./lib/api";

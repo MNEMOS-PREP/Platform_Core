@@ -56,13 +56,39 @@ bump. Your module keeps working on the old version until you choose to move.
 | `DependencyTable` | Developer view of upstream health |
 | `MasteryBar` | The five mastery states. **Cannot render a number for a state that has none.** |
 | `NotYetTested` | The collapsed count for untested concepts — never a row of empty bars |
-| `Layout` `Card` `Spinner` `ErrorNote` | App chrome and honest loading/error states |
+| `Icon` | The icon set. 40 stroke glyphs, `currentColor`, no emoji anywhere |
+| `Card` `Button` `EmptyState` `Spinner` `ErrorNote` | Shared states, for a module that has not grown its own |
 | `api` `relativeDays` `MODULES` | Fetch wrapper, formatting, module registry |
 
+`Layout`, `ModulePlaceholder` and `NavItem` were removed in 0.7.0. **A module
+owns its own frame.** `Layout` claimed a shared one and was imported by nothing;
+the only module with a UI had already replaced it and disagreed with it on every
+value. What makes the platform one product is the vocabulary underneath the
+frame — the provenance components, the mastery bar, the icon set and the tokens
+— not a shared header.
+
 ```tsx
-import { DependencyAlert, SourceChip, Layout } from "@ai/core";
+import { DependencyAlert, SourceChip, Icon } from "@ai/core";
 import "@ai/core/styles.css";
 ```
+
+### Design tokens
+
+`styles.css` owns the palettes, **including dark mode**, so a module inherits
+them rather than re-picking them. Beyond the verification and mastery states:
+`--color-on-brand` (the label on a brand fill — never `text-white`),
+`--color-surface-raised`, `--color-scrim`, a six-hue **categorical** palette
+(identity, never quality), a five-step **sequential** ramp (magnitude), five
+**transient session state** colours, and an **evaluator-agreement** hue.
+
+Those last four exist because ten of the nineteen §8 specifications reach for a
+colour that has no token, and the nearest thing to hand is always the
+verification palette. If a failing test, a rejected candidate and a recording
+indicator all render in `contested` red, then `contested` stops meaning "reports
+disagree" and the platform's one real UI contract is gone.
+
+A module may override any token — its stylesheet is imported after this one. It
+must not define dark mode from scratch.
 
 ### Backend — `ai_core`
 

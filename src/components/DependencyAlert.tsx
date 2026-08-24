@@ -11,7 +11,9 @@
  * them that one piece is unavailable and the rest is trustworthy.
  */
 
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
+
+import { Icon } from "./Icon";
 
 export interface DegradedFeature {
   feature: string;
@@ -45,22 +47,29 @@ export function DependencyAlert({
   degraded: DegradedFeature[] | undefined;
   compact?: boolean;
 }) {
+  const headingId = useId();
   if (!degraded || degraded.length === 0) return null;
 
   return (
     <section
-      aria-labelledby="degraded-heading"
+      aria-labelledby={headingId}
       className="rounded-lg border border-reported/50 bg-reported-soft/40 p-3"
     >
-      <h2
-        id="degraded-heading"
+      {/*
+        `h3`, not `h2`. This banner is rendered INSIDE a page section that is
+        already an `h2`, so a second `h2` put a sibling where a child belongs and
+        the document outline stopped matching the page. It is a note about the
+        section it sits in, not a peer of it.
+      */}
+      <h3
+        id={headingId}
         className="flex items-center gap-2 text-sm font-semibold text-reported"
       >
-        <span aria-hidden>⚠</span>
+        <Icon name="alert" size={15} />
         {degraded.length === 1
           ? "One part of this page is unavailable"
           : `${degraded.length} parts of this page are unavailable`}
-      </h2>
+      </h3>
 
       {!compact && (
         <p className="mt-1 text-xs text-ink-soft">

@@ -10,8 +10,9 @@
  * heading so it appears in the document outline.
  */
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { relativeDays, shortDate } from "../lib/format";
+import { Icon } from "./Icon";
 
 export type VerificationState = "confirmed" | "reported" | "contested" | "rejected";
 export type Stance = "fact" | "company_stated";
@@ -90,7 +91,7 @@ export function VerificationBadge({
 export function StaleBadge({ since }: { since: string }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2 py-0.5 text-xs text-ink-soft">
-      <span aria-hidden>⌛</span> from {shortDate(since)} — may have changed
+      <Icon name="clock" size={12} /> from {shortDate(since)} — may have changed
     </span>
   );
 }
@@ -114,9 +115,10 @@ export function SourceChip({ sources }: { sources: ClaimSource[] }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="cursor-pointer rounded border border-line bg-surface px-1.5 py-0.5 text-xs text-ink-soft hover:border-brand hover:text-brand"
+        className="inline-flex cursor-pointer items-center gap-1 rounded border border-line bg-surface px-1.5 py-0.5 text-xs text-ink-soft hover:border-brand hover:text-brand"
       >
-        ⓘ {sources.length} {sources.length === 1 ? "source" : "sources"} ·{" "}
+        <Icon name="info" size={12} />
+        {sources.length} {sources.length === 1 ? "source" : "sources"} ·{" "}
         {relativeDays(freshest)}
       </button>
 
@@ -186,14 +188,29 @@ export function ClaimRow({ claim }: { claim: RenderedClaim }) {
 /* ------------------------------------------------------------------ */
 
 export function CommunityTray({ claims }: { claims: RenderedClaim[] }) {
+  /*
+    Generated, not hardcoded.
+
+    This id was the literal string "community-tray-heading", and a company page
+    renders `CommunityTray` up to FOUR times — once for the process block and
+    again inside the eligibility / compensation / tips loop. Four elements with
+    one id is invalid HTML, and the consequence is not cosmetic: every
+    `aria-labelledby` resolves to the FIRST match, so a screen reader announced
+    the eligibility tray under the process section's heading. The docblock at
+    the top of this file promises "the community tray is a real <section> with a
+    real heading so it lands in the document outline"; with a duplicated id that
+    promise was false as shipped, and it was false in the package whose job is
+    to be the one implementation everybody trusts.
+  */
+  const headingId = useId();
   if (claims.length === 0) return null;
   return (
     <section
-      aria-labelledby="community-tray-heading"
+      aria-labelledby={headingId}
       className="mt-4 rounded-lg border border-dashed border-reported/50 bg-reported-soft/40 p-3"
     >
       <h3
-        id="community-tray-heading"
+        id={headingId}
         className="text-xs font-semibold tracking-wide text-reported uppercase"
       >
         Community reported · single source each · treat with caution
@@ -216,13 +233,15 @@ export function CommunityTray({ claims }: { claims: RenderedClaim[] }) {
 /* ------------------------------------------------------------------ */
 
 export function ContestedFact({ claims }: { claims: RenderedClaim[] }) {
+  // Same duplication as `CommunityTray` above, for the same reason.
+  const headingId = useId();
   if (claims.length === 0) return null;
   return (
     <section
-      aria-labelledby="contested-heading"
+      aria-labelledby={headingId}
       className="mt-4 rounded-lg border border-contested/40 bg-contested-soft/40 p-3"
     >
-      <h3 id="contested-heading" className="text-xs font-semibold text-contested uppercase">
+      <h3 id={headingId} className="text-xs font-semibold text-contested uppercase">
         Reports disagree
       </h3>
       <p className="mt-1 text-xs text-ink-soft">
@@ -259,16 +278,25 @@ export function CompanySaysVsStudentsReport({
   studentClaims: RenderedClaim[];
   ratings?: { aspect: string; mean: number; count: number }[];
 }) {
+  // Rendered twice on a company page (culture and growth), so both headings
+  // need generated ids for the same reason the trays above do.
+  const companyId = useId();
+  const studentsId = useId();
+
   if (companyClaims.length === 0 && studentClaims.length === 0) return null;
 
   return (
     <div className="grid gap-3 md:grid-cols-2">
       <section
-        aria-labelledby="company-says"
+        aria-labelledby={companyId}
         className="rounded-lg border border-company/30 bg-company-soft/50 p-3"
       >
-        <h3 id="company-says" className="text-sm font-semibold text-company">
-          🏢 Company says
+        <h3
+          id={companyId}
+          className="flex items-center gap-1.5 text-sm font-semibold text-company"
+        >
+          <Icon name="building" size={15} />
+          Company says
         </h3>
         <p className="mt-0.5 text-xs text-ink-soft">
           Straight from their own material. Authoritative about what they
@@ -289,11 +317,15 @@ export function CompanySaysVsStudentsReport({
       </section>
 
       <section
-        aria-labelledby="students-report"
+        aria-labelledby={studentsId}
         className="rounded-lg border border-line bg-surface-raised p-3"
       >
-        <h3 id="students-report" className="text-sm font-semibold text-ink">
-          🎓 Students report
+        <h3
+          id={studentsId}
+          className="flex items-center gap-1.5 text-sm font-semibold text-ink"
+        >
+          <Icon name="student" size={15} />
+          Students report
         </h3>
         <p className="mt-0.5 text-xs text-ink-soft">
           From people who actually sat the drive.
@@ -306,11 +338,26 @@ export function CompanySaysVsStudentsReport({
                 <dt className="text-sm text-ink-soft capitalize">
                   {r.aspect.replace(/_/g, " ")}
                 </dt>
-                <dd className="tabular text-sm text-ink">
-                  <span aria-hidden>{"★".repeat(Math.round(r.mean))}</span>
-                  <span className="ml-1">
+                {/*
+                  The number leads and the stars follow, because the number is
+                  the claim and the stars are the gloss. Repeated "★" also
+                  rounded 4.3 to four glyphs and 3.5 to four, so two visibly
+                  different means drew the same row.
+                */}
+                <dd className="tabular flex items-center gap-1.5 text-sm text-ink">
+                  <span>
                     {r.mean.toFixed(1)} out of 5
                     <span className="text-ink-faint"> · {r.count} ratings</span>
+                  </span>
+                  <span aria-hidden className="flex text-reported">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <Icon
+                        key={n}
+                        name="star"
+                        size={12}
+                        className={n <= Math.round(r.mean) ? "" : "opacity-25"}
+                      />
+                    ))}
                   </span>
                 </dd>
               </div>
