@@ -103,6 +103,7 @@ must not define dark mode from scratch.
 | `ai_core.mastery` | The five states, decay, hysteresis. One definition, published. |
 | `ai_core.timeutil` | One UTC clock. SQLite hands back naive datetimes; this is the fix. |
 | `ai_core.schema_repair` | Additive `ALTER TABLE` on startup, so a pull never costs a dev their `dev.db` |
+| `ai_core.models` | **The model roster.** Every LLM id the platform calls, named once |
 
 ---
 
@@ -140,6 +141,51 @@ view.stale         # decayed, but the bar is held open by hysteresis
 
 Decay widens the error bar and never lowers the estimate: a student must never
 appear to get worse by doing nothing.
+
+---
+
+## The model roster (v0.8.0)
+
+Nineteen modules will each want a route to a model. If each hardcodes an id, a
+deprecation updates one module and leaves eighteen calling a dead name — and
+each reports it as a different kind of outage.
+
+**A module names a tier. This package says which model that is today.**
+
+```python
+from ai_core.models import resolve
+
+route = resolve("generation")          # or "extraction" | "classification" | "guard"
+if not route:
+    log.info("generation off: %s", route.unusable)   # never raises
+else:
+    route.model, route.provider.base_url, route.keys, route.profile.json_schema
+```
+
+Change one line in `_TIER_MODEL` and every module moves with it. Override
+without an edit: `AI_MODEL_GENERATION` platform-wide, or a per-job env name a
+module passes as `job_env` when one call needs something different.
+
+`RETIRED` is the half people skip. M15 named `llama-3.1-8b-instant` for two of
+its three jobs; that model 404s on the platform's account, so both calls failed
+on every run and the only record of the name was one module's `keys.txt`. An id
+in `RETIRED` is refused with the reason it was retired, instead of reaching a
+provider and coming back as a 404 that reads like a bad key.
+
+```bash
+python -c "from ai_core.models import verify; print(*verify(), sep='
+')"
+```
+
+`verify()` is the only function here that opens a socket, and nothing in the
+suite calls it. It lists each provider's models and reports whether the roster's
+ids are actually served — the command that would have caught the M15 drift the
+day it happened.
+
+**Send `ai_core.models.USER_AGENT` on every request.** Groq is behind
+Cloudflare, and a default `Python-urllib/3.x` is answered with HTTP 403 and body
+`error code: 1010` — a browser-signature ban that reads exactly like a rejected
+API key. Two modules have now lost time to it.
 
 ---
 
