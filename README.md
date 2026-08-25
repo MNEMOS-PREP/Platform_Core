@@ -214,12 +214,28 @@ python -m venv .venv
 
 ## Releasing
 
-Changing this package changes every module. Two rules:
+Changing this package changes every module. Three rules:
 
 1. **Additive changes only within a minor version.** Renaming or removing an
    export breaks nineteen repos at once.
 2. **Tag every release.** Module repos pin tags; an untagged change is
    unreachable and an unpinned one is a future outage.
+3. **Move all four version declarations in the same commit.**
+
+   ```
+   package.json              "version"
+   src/index.ts              CORE_VERSION
+   python/pyproject.toml     version
+   python/ai_core/__init__.py __version__
+   ```
+
+   This has now been got wrong twice, the same way both times: the TypeScript
+   half moves and the Python half does not, and it stays wrong for two releases
+   because nothing looks. `python/tests/test_version_parity.py` reads all four
+   as files and fails if they disagree — it reads `__version__` from source
+   rather than importing it, because this package is installed into each
+   module's virtualenv as a copy and `import ai_core` inside this checkout can
+   resolve to a snapshot from a different release.
 
 ```bash
 git tag v0.2.0 && git push origin v0.2.0
