@@ -212,6 +212,13 @@ python -m venv .venv
 .venv/Scripts/python -m ruff check .
 ```
 
+## Platform TODO
+
+Cross-cutting work that belongs to no single module lives in
+[PLATFORM_TODO.md](PLATFORM_TODO.md). The top item is that the platform has no
+identity: every module takes `candidate_id` from the caller and returns that
+student's data to whoever asked.
+
 ## Releasing
 
 Changing this package changes every module. Three rules:
