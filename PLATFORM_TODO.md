@@ -9,7 +9,11 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started
 
 ---
 
-## 1. ⬜ There is no identity. Every module serves every student's data to anyone.
+## 1. 🟡 There is no identity. Every module serves every student's data to anyone.
+
+> **The contract landed in v0.9.0** (`ai_core.identity`). Nothing ENFORCES it
+> yet — that is the rollout below, and until a module takes the dependency its
+> data is still open. A contract nobody calls is not a fix.
 
 **Priority: highest.** Nothing else on this list can be correct until this is.
 
@@ -53,14 +57,26 @@ on — `EvidenceRef`, `DependencyStatus`, the mastery states. Identity is the sa
 kind of thing: if each module invents its own notion of "who is asking", they
 will disagree, and the disagreement will be a leak rather than a bug.
 
-- ⬜ **A `Principal` contract in `ai_core`** — who is asking, and in what role
-      (student · placement officer · researcher · admin). One definition, read
-      by all nineteen.
-- ⬜ **A dependency every router can take** that resolves a request to a
-      `Principal`, and a helper that says whether that principal may see a given
-      `candidate_id`. The check has to be one call, or it will be skipped.
-- ⬜ **Fail closed.** No principal → no candidate-scoped data. Not "the default
-      candidate", not an empty list that looks like a normal empty state.
+- ✅ **A `Principal` contract in `ai_core`** — `identity.py`, v0.9.0. Four
+      roles, closed on purpose: a role one module invents is a role the other
+      eighteen cannot refuse.
+- ✅ **One call.** `may_see(principal, candidate_id) -> Decision`. A check that
+      takes three lines and a comment is one somebody omits on the sixteenth
+      endpoint, and the sixteenth endpoint is the one that leaks.
+- ✅ **Fail closed.** No principal → `Access.none` with a reason. `bool(decision)`
+      is true only for `full`, so `if may_see(...)` cannot pass a placement
+      officer into a screen that renders a name.
+- ✅ **The auth MECHANISM is a seam, not a decision.** `Resolver` is a protocol.
+      How a student proves who they are — college SSO, a cookie, a signed token
+      — is a product decision nobody has made, and inventing one here would be
+      wrong for nineteen modules at once or block all of them until it is right.
+      A dev resolver reads a header and is refused outside `AI_AUTH_MODE=dev`.
+
+**The rollout, which is the part that actually closes the hole:**
+
+- ⬜ **Each module takes the dependency and calls `may_see` on every
+      candidate-scoped route.** Nineteen repos; the contract means each is a
+      small change rather than a design.
 - ⬜ **Login and signup in `Platform_Shell`**, with the session available to
       every mounted module UI, replacing each module's local candidate control.
 - ⬜ **`candidate_id` stops being a URL parameter** for student-facing reads.

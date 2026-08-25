@@ -27,7 +27,7 @@ surfaces render and none of them may reinterpret. Layout and chrome are not,
 and stay module-local.
 """
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 from ai_core.concepts import (
     Concept,
@@ -69,6 +69,14 @@ from ai_core.mastery import (
 # letter apart is a wrong import nobody reviews carefully. The roster is
 # reached as `from ai_core.models import MODELS`, where the module name says
 # which kind of model is meant.
+from ai_core.identity import (
+    Access,
+    Decision,
+    Principal,
+    Role,
+    may_see,
+    principal_from_headers,
+)
 from ai_core.models import Route, model_for
 from ai_core.models import resolve as resolve_model
 from ai_core.modules_meta import MODULES, ModuleMeta, ModuleStatus, all_statuses, module_status
@@ -104,6 +112,12 @@ __all__ = [
     "Route",
     "model_for",
     "resolve_model",
+    "Access",
+    "Decision",
+    "Principal",
+    "Role",
+    "may_see",
+    "principal_from_headers",
     "__version__",
     "all_statuses",
     "as_utc",

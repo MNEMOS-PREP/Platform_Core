@@ -104,6 +104,7 @@ must not define dark mode from scratch.
 | `ai_core.timeutil` | One UTC clock. SQLite hands back naive datetimes; this is the fix. |
 | `ai_core.schema_repair` | Additive `ALTER TABLE` on startup, so a pull never costs a dev their `dev.db` |
 | `ai_core.models` | **The model roster.** Every LLM id the platform calls, named once |
+| `ai_core.identity` | **Who is asking.** `Principal`, `may_see`, and a fail-closed default |
 
 ---
 
