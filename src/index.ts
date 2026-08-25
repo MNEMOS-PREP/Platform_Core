@@ -17,7 +17,7 @@
  * prevent, in its own source: a version string that reports a state of the
  * world it is not in. Move all three in the same commit.
  */
-export const CORE_VERSION = "0.9.0";
+export const CORE_VERSION = "0.9.1";
 
 // ── Provenance: the trust contract ────────────────────────────────────────
 export {
@@ -60,7 +60,7 @@ export type { IconName } from "./components/Icon";
 export { Button, Card, EmptyState, ErrorNote, Spinner } from "./components/Shell";
 
 // ── Utilities ─────────────────────────────────────────────────────────────
-export { ApiError, api } from "./lib/api";
+export { ApiError, api, setIdentityHeaders } from "./lib/api";
 export { relativeDays, reportCount, shortDate } from "./lib/format";
 export { LIVE_MODULES, MODULES, PLANNED_MODULES } from "./lib/modules";
 export type { ModuleInfo } from "./lib/modules";

@@ -18,11 +18,32 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Who the browser is, on every request.
+ *
+ * Backends resolve a caller through `ai_core.identity` and refuse
+ * candidate-scoped data without one. That check is worthless if the frontend
+ * does not say who is asking — so identity headers belong on the ONE fetch
+ * wrapper every module already uses, rather than on twenty-two call sites per
+ * module across nineteen repos.
+ *
+ * Set once at startup. Until a real session exists this carries the dev
+ * headers, which the backend only honours under `AI_AUTH_MODE=dev`; when
+ * `Platform_Shell` grows a login it sets a token here and nothing else in any
+ * module changes.
+ */
+let identityHeaders: Record<string, string> = {};
+
+export function setIdentityHeaders(headers: Record<string, string>): void {
+  identityHeaders = { ...headers };
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...identityHeaders,
       ...(init?.headers ?? {}),
     },
   });

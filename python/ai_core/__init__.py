@@ -27,7 +27,7 @@ surfaces render and none of them may reinterpret. Layout and chrome are not,
 and stay module-local.
 """
 
-__version__ = "0.9.0"
+__version__ = "0.9.1"
 
 from ai_core.concepts import (
     Concept,
