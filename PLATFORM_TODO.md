@@ -79,12 +79,70 @@ will disagree, and the disagreement will be a leak rather than a bug.
       small change rather than a design.
 - ⬜ **Login and signup in `Platform_Shell`**, with the session available to
       every mounted module UI, replacing each module's local candidate control.
+      Specified below — it is the half of this item with no owner and no
+      design, and every module that ships before it is another call site to
+      change afterwards.
 - ⬜ **`candidate_id` stops being a URL parameter** for student-facing reads.
       "My resumes" means the caller's, derived from the session — never from a
       value the caller typed.
 - ⬜ **A test every module can import** that asserts a candidate-scoped endpoint
       refuses an unauthenticated request. A shared check, because nineteen
       hand-written ones is nineteen chances to forget.
+
+### The login screen, specified
+
+The bullet above has been on this list as one line since v0.9.0, and one line is
+why nobody has built it: "add login" is a decision, not a task. This is the
+decision, so the next person can start.
+
+**What it is for.** Not security first — *identity*. A student must be able to
+close the laptop on Tuesday and come back on Thursday to their own resumes,
+their own skill graph, their own report history. Today "their own" means
+whatever UUID is in localStorage, which is not a person, does not survive a
+different browser, and is shared by anyone who types it.
+
+**Where it lives.** `Platform_Shell`, on `:5173`, because it owns the origin and
+mounts every module's route tree. A login screen inside a module would be the
+nineteenth copy of the thing this file exists to prevent.
+
+**What it must do, and nothing more:**
+
+- ⬜ **Sign in, sign up, sign out** against `ai_core.identity`'s `Resolver`
+      protocol. The MECHANISM stays a seam (v0.9.0's reasoning holds): a
+      provider is a product decision nobody has made, and choosing one here
+      would be wrong for nineteen modules at once. The master plan §19 already
+      recommends Clerk for Phase 1 with our own `user` table and
+      `auth_provider_id` stored rather than the provider's whole identity, and
+      OIDC for college Google Workspace SSO in Phase 3. Take that, keep it
+      swappable, do not build password hashing.
+- ⬜ **One session, read by every mounted module.** The shell already forces one
+      React instance and one token set; the session belongs beside them. A
+      module asks the shell who is asking — it does not read a cookie itself.
+- ⬜ **`candidate_id` stops being a URL parameter for student-facing reads**
+      (already on the list above; this is the screen that makes it possible).
+      "My resumes" means the caller's.
+- ⬜ **Delete each module's local candidate control.** M01's `CandidateControl`
+      is the reference case: honest about being the dev shape, refused outside
+      `AI_AUTH_MODE=dev`, and one call in `candidate.ts` away from a real
+      session. It is what every other module should look like until this lands,
+      and what none of them should look like after.
+- ⬜ **A placement-officer role that cannot become a student role.** The four
+      roles in `identity.py` are closed on purpose. The screen must not invent a
+      fifth by letting an officer "view as" a student — §15 decision 4 is
+      unresolved and a UI affordance would decide it silently.
+
+**What it must NOT do:**
+
+- ⛔ **No profile page, no avatar, no settings.** Every one of those is a place
+      to leak something, and none is needed to answer "who is asking".
+- ⛔ **No email verification flow in Phase 1** unless the provider gives it
+      free. It is a week of work protecting an account with a resume in it,
+      during a pilot where the participants are known by name.
+
+**The test that proves it:** the shared refusal check already on this list —
+an unauthenticated request to any candidate-scoped endpoint returns 403 with a
+reason. Written once, imported by nineteen repos, because nineteen hand-written
+ones is nineteen chances to forget.
 
 ### What already exists to build on
 
