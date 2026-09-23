@@ -74,9 +74,19 @@ will disagree, and the disagreement will be a leak rather than a bug.
 
 **The rollout, which is the part that actually closes the hole:**
 
-- ⬜ **Each module takes the dependency and calls `may_see` on every
+- 🟡 **Each module takes the dependency and calls `may_see` on every
       candidate-scoped route.** Nineteen repos; the contract means each is a
-      small change rather than a design.
+      small change rather than a design. **v0.10.0 made it one line:**
+      `dependencies=[Depends(candidate_guard(owners))]` on the router
+      (`ai_core.guard`) — M01, M02 and M06 had each written the same twenty
+      lines by hand, and the copies had started to differ on `session_id`.
+
+      | Module | Guarded | How |
+      |---|---|---|
+      | M01, M02, M06 | ✅ | their own copy (pre-v0.10.0); move to `candidate_guard` on next bump |
+      | M13 | ⬜ | on v0.10.0 (for `ai_core.outbox`); the guard is next |
+      | M04 | ⬜ | holds the skill graph and consent — the most sensitive data unguarded |
+      | M05, M15 | ⬜ | on v0.6.0; need the bump first |
 - ⬜ **Login and signup in `Platform_Shell`**, with the session available to
       every mounted module UI, replacing each module's local candidate control.
       Specified below — it is the half of this item with no owner and no
@@ -85,9 +95,13 @@ will disagree, and the disagreement will be a leak rather than a bug.
 - ⬜ **`candidate_id` stops being a URL parameter** for student-facing reads.
       "My resumes" means the caller's, derived from the session — never from a
       value the caller typed.
-- ⬜ **A test every module can import** that asserts a candidate-scoped endpoint
+- ✅ **A test every module can import** that asserts a candidate-scoped endpoint
       refuses an unauthenticated request. A shared check, because nineteen
-      hand-written ones is nineteen chances to forget.
+      hand-written ones is nineteen chances to forget. **v0.10.0:**
+      `ai_core.testing.assert_refuses_strangers(client, app)`. It takes no route
+      list — it reads the app's OpenAPI paths, so the route added next month is
+      checked by the test written today — and asks each route as nobody and as
+      another student. It fails if it finds nothing to check.
 
 ### The login screen, specified
 

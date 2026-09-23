@@ -25,9 +25,17 @@ makes, or is it one module's implementation?* `EvidenceRef` is the first —
 thing by a reference — and so is the five-state mastery rule, which five
 surfaces render and none of them may reinterpret. Layout and chrome are not,
 and stay module-local.
+
+v0.10.0 adds the two things every module was re-deriving, both mechanisms
+rather than contracts, and both reached by their module name because they are
+used in one place each (a lifespan, a router) rather than everywhere:
+
+    from ai_core.outbox import Channel, OutboxRow, Sweeper, post_json
+    from ai_core.guard import candidate_guard, identity_headers
+    from ai_core.testing import assert_refuses_strangers
 """
 
-__version__ = "0.9.1"
+__version__ = "0.10.0"
 
 from ai_core.concepts import (
     Concept,
@@ -54,6 +62,14 @@ from ai_core.evidence import (
     resolve,
     sha256_hex,
 )
+from ai_core.identity import (
+    Access,
+    Decision,
+    Principal,
+    Role,
+    may_see,
+    principal_from_headers,
+)
 from ai_core.mastery import (
     STATE_THRESHOLDS_VERSION,
     MasteryState,
@@ -64,20 +80,13 @@ from ai_core.mastery import (
     se_effective,
     state,
 )
+
 # `MODELS` and `PROVIDERS` are deliberately NOT re-exported here: this package
 # already exports `MODULES`, the nineteen-module registry, and two names one
 # letter apart is a wrong import nobody reviews carefully. The roster is
 # reached as `from ai_core.models import MODELS`, where the module name says
 # which kind of model is meant.
-from ai_core.identity import (
-    Access,
-    Decision,
-    Principal,
-    Role,
-    may_see,
-    principal_from_headers,
-)
-from ai_core.models import Route, model_for
+from ai_core.models import Route, model_for  # noqa: I001 - the comment above belongs here
 from ai_core.models import resolve as resolve_model
 from ai_core.modules_meta import MODULES, ModuleMeta, ModuleStatus, all_statuses, module_status
 from ai_core.schema_repair import ensure_schema

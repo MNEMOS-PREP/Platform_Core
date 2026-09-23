@@ -105,6 +105,50 @@ must not define dark mode from scratch.
 | `ai_core.schema_repair` | Additive `ALTER TABLE` on startup, so a pull never costs a dev their `dev.db` |
 | `ai_core.models` | **The model roster.** Every LLM id the platform calls, named once |
 | `ai_core.identity` | **Who is asking.** `Principal`, `may_see`, and a fail-closed default |
+| `ai_core.guard` | **The check, enforced.** `candidate_guard()` on a router; `identity_headers()` to forward a student when calling another module (v0.10.0) |
+| `ai_core.testing` | `assert_refuses_strangers(client, app)` — finds every candidate-scoped route from the OpenAPI document and asks it as nobody and as somebody else (v0.10.0) |
+| `ai_core.outbox` | **"And a worker drains it", once.** Transactional outbox rows, claim-before-send, backoff, a per-pass circuit breaker, visible stuck rows, and a kickable `Sweeper` (v0.10.0) |
+
+---
+
+## The outbox (v0.10.0)
+
+Every module that owes another module something writes a row with the work
+and delivers it afterwards. Writing the row was never the problem; the worker
+was — M13 promised one in a docstring and shipped none, so the platform's core
+loop only closed when somebody drained it by hand. A module now declares what
+it owes and nothing about how:
+
+```python
+from ai_core.outbox import Channel, OutboxRow, Sweeper, post_json
+
+class CoverageOutbox(OutboxRow, table=True):          # the delivery columns
+    __tablename__ = "m13_coverage_outbox"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+
+coverage = Channel(name="m02.coverage", model=CoverageOutbox,
+                   send=lambda rows: post_json(url_for(rows[0]), rows[0].payload))
+
+sweeper = Sweeper("M13", lambda: Session(engine), [observations, coverage])
+# in the lifespan:   with sweeper.running(): yield
+# after a write:     sweeper.kick()          — out in ms, the interval is the safety net
+# on /v1/outbox:     outbox.summary(db, CoverageOutbox)  — stuck rows listed, with reasons
+```
+
+What a send can come to, and what happens to the row:
+
+| Outcome | When | Row |
+|---|---|---|
+| `sent` | 2xx | done |
+| `void` | nothing was owed after all | done, reason kept |
+| `reject` | other 4xx | `rejected` — needs a person; `requeue()` after the fix |
+| `retry` | 5xx, 408, 429 | backs off; `held` after `max_failures` |
+| `unreachable` | refused, timed out, 502/503/504 | backs off, **never counted** — an outage is not the row's fault |
+
+One unreachable send stops that channel's pass (the rest would find the same
+closed door), and the first send that gets through afterwards re-arms every
+row still waiting out a backoff set during the outage.
 
 ---
 
