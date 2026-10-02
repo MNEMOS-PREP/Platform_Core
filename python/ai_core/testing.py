@@ -298,7 +298,12 @@ def assert_service_only(
     expect_at_least: int = 1,
 ) -> list[tuple[str, str]]:
     """Every service-only route refuses a browser — signed in as anybody, admin
-    included — and a wrong secret. An admin is a person, not a module."""
+    included — and a wrong secret. An admin is a person, not a module.
+
+    A refusal is 401 or 403: a route that is also candidate-scoped may turn
+    "nobody" away at the candidate guard before the secret is read, and that
+    is still the door shut.
+    """
     routes = service_routes(app)
     skipped = set(skip)
     assert len(routes) >= expect_at_least, (
@@ -317,7 +322,7 @@ def assert_service_only(
         url = _PARAM.sub(OWNER, template)
         for who, headers in callers.items():
             response = _ask(client, method, url, headers)
-            if response.status_code != 401:
+            if response.status_code not in (401, 403):
                 problems.append(f"{method} {template} answered {response.status_code} to {who}")
     assert not problems, "service-only routes that served a caller:\n  " + "\n  ".join(problems)
     return routes
