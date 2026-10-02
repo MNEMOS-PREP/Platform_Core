@@ -45,6 +45,11 @@ def _app(guarded: bool = True) -> FastAPI:
     def report(session_id: str):
         return {"session_id": session_id}
 
+    @router.get("/skill-graph/theta")
+    def theta(candidate: str, concepts: str = ""):
+        # M04's shape: the QUERY names the student (v0.11.0).
+        return {"candidate": candidate}
+
     @router.get("/health")
     def health():
         return {"ok": True}
@@ -120,6 +125,7 @@ def test_routes_are_discovered_not_listed():
     assert set(found) == {
         ("GET", "/v1/candidates/{candidate_id}/graph"),
         ("POST", "/v1/candidates/{candidate_id}/consent"),
+        ("GET", "/v1/skill-graph/theta"),
     }
     # An owner-resolved noun is found when asked for.
     assert ("GET", "/v1/sessions/{session_id}/report") in candidate_scoped_routes(
@@ -130,7 +136,7 @@ def test_routes_are_discovered_not_listed():
 def test_a_guarded_app_passes():
     app = _app()
     checked = assert_refuses_strangers(TestClient(app), app)
-    assert len(checked) == 2
+    assert len(checked) == 3
 
 
 def test_an_unguarded_app_fails_with_every_route_named():
@@ -141,6 +147,7 @@ def test_an_unguarded_app_fails_with_every_route_named():
     assert {(leak.method, leak.path) for leak in found} == {
         ("GET", "/v1/candidates/{candidate_id}/graph"),
         ("POST", "/v1/candidates/{candidate_id}/consent"),
+        ("GET", "/v1/skill-graph/theta"),
     }
     assert {leak.asked_as for leak in found} == {"nobody", "another student"}
     with pytest.raises(AssertionError, match="served a stranger"):
@@ -151,3 +158,45 @@ def test_a_check_that_finds_nothing_to_check_fails():
     app = FastAPI()
     with pytest.raises(AssertionError, match="passes by accident"):
         assert_refuses_strangers(TestClient(app), app)
+
+
+
+# ── the query names a student (v0.11.0) ──────────────────────────────────
+
+
+def test_a_query_that_names_the_student_is_checked_like_a_path():
+    """M04's theta route: until v0.11.0 the guard read only the path, so this
+    answered anybody about any student."""
+    client = TestClient(_app())
+    url = f"/v1/skill-graph/theta?candidate={OWNER}"
+    assert client.get(url, headers=identity_headers(OWNER)).status_code == 200
+    assert client.get(url).status_code == 403
+    stranger = identity_headers("00000000-0000-4000-8000-0000000b0b00")
+    assert client.get(url, headers=stranger).status_code == 403
+
+
+def test_a_route_whose_query_names_nobody_is_left_alone():
+    client = TestClient(_app())
+    assert client.get("/v1/skill-graph/theta?concepts=x").status_code == 422  # the handler's, not the guard's
+
+
+def test_the_path_decides_when_both_name_a_student():
+    client = TestClient(_app())
+    url = f"/v1/candidates/{OWNER}/graph?candidate=00000000-0000-4000-8000-0000000b0b00"
+    assert client.get(url, headers=identity_headers(OWNER)).status_code == 200
+
+
+def test_the_query_names_are_the_modules_to_choose():
+    """A module whose query parameter has another name says so."""
+    router = APIRouter(dependencies=[Depends(candidate_guard(query=("student",)))])
+
+    @router.get("/x")
+    def x(student: str):
+        return {}
+
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    assert client.get(f"/x?student={OWNER}").status_code == 403
+    assert client.get(f"/x?student={OWNER}", headers=identity_headers(OWNER)).status_code == 200
+    assert ("GET", "/x") in candidate_scoped_routes(app, query=("student",))

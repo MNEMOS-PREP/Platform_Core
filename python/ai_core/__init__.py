@@ -35,7 +35,7 @@ used in one place each (a lifespan, a router) rather than everywhere:
     from ai_core.testing import assert_refuses_strangers
 """
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 from ai_core.concepts import (
     Concept,

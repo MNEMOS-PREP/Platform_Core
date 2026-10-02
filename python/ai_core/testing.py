@@ -7,9 +7,12 @@ forget."*
 
 It does not take a list of routes. A list is one endpoint behind the day it is
 written, and the endpoint it misses is the new one — the one nobody reviewed.
-It walks the app instead, finds every route whose path names a candidate, and
-asks each one as nobody and as somebody else. A route added next month is
-checked by a test written today.
+It walks the app instead, finds every route whose path or query names a
+candidate, and asks each one as nobody and as somebody else. A route added next
+month is checked by a test written today.
+
+The query half is v0.11.0: until then a route like `/skill-graph/theta
+?candidate=…` was invisible to this check and to the guard alike.
 
     from ai_core.testing import assert_refuses_strangers
 
@@ -23,6 +26,9 @@ import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlencode
+
+from ai_core.guard import QUERY_NAMES
 
 __all__ = ["Leak", "assert_refuses_strangers", "candidate_scoped_routes", "leaks"]
 
@@ -47,10 +53,35 @@ class Leak:
         return f"{self.method} {self.path} answered {self.status} to {self.asked_as}"
 
 
+def _query_scoped(app: Any, query: Sequence[str]) -> dict[tuple[str, str], list[str]]:
+    """(method, path) -> the query parameters in `query` that the operation
+    declares. From the OpenAPI document, for the same reason as below."""
+    wanted = set(query)
+    found: dict[tuple[str, str], list[str]] = {}
+    openapi = getattr(app, "openapi", None)
+    if not callable(openapi) or not wanted:
+        return found
+    for path, operations in (openapi().get("paths") or {}).items():
+        for method, operation in operations.items():
+            if method.upper() not in _HTTP_METHODS or not isinstance(operation, dict):
+                continue
+            names = [
+                p["name"]
+                for p in operation.get("parameters") or []
+                if p.get("in") == "query" and p.get("name") in wanted
+            ]
+            if names:
+                found[(method.upper(), path)] = names
+    return found
+
+
 def candidate_scoped_routes(
-    app: Any, params: Sequence[str] = ("candidate_id",)
+    app: Any,
+    params: Sequence[str] = ("candidate_id",),
+    query: Sequence[str] = QUERY_NAMES,
 ) -> list[tuple[str, str]]:
-    """Every (method, path template) whose path names one of `params`.
+    """Every (method, path template) whose path names one of `params`, or
+    whose query takes one of `query`.
 
     Read from the app's OpenAPI document rather than from `app.routes`. The
     route tree is FastAPI's internals and changed shape in 0.14x (included
@@ -80,6 +111,7 @@ def candidate_scoped_routes(
         if path and methods and set(_PARAM.findall(path)) & wanted:
             found.update((method, path) for method in set(methods) - _SKIP_METHODS)
 
+    found.update(_query_scoped(app, query))
     return sorted(found, key=lambda pair: (pair[1], pair[0]))
 
 
@@ -93,6 +125,7 @@ def leaks(
     app: Any,
     *,
     params: Sequence[str] = ("candidate_id",),
+    query: Sequence[str] = QUERY_NAMES,
     skip: Iterable[tuple[str, str]] = (),
 ) -> list[Leak]:
     """Every candidate-scoped route that did not refuse a stranger.
@@ -108,10 +141,13 @@ def leaks(
         "nobody": {},
         "another student": {"X-Role": "student", "X-Candidate-Id": STRANGER},
     }
-    for method, template in candidate_scoped_routes(app, params):
+    by_query = _query_scoped(app, query)
+    for method, template in candidate_scoped_routes(app, params, query):
         if (method, template) in skipped:
             continue
         url = _fill(template, params, OWNER)
+        if (method, template) in by_query:
+            url += "?" + urlencode({name: OWNER for name in by_query[(method, template)]})
         for who, headers in strangers.items():
             kwargs: dict[str, Any] = {"headers": headers}
             if method in {"POST", "PUT", "PATCH"}:
@@ -127,6 +163,7 @@ def assert_refuses_strangers(
     app: Any,
     *,
     params: Sequence[str] = ("candidate_id",),
+    query: Sequence[str] = QUERY_NAMES,
     skip: Iterable[tuple[str, str]] = (),
     expect_at_least: int = 1,
 ) -> list[tuple[str, str]]:
@@ -135,12 +172,12 @@ def assert_refuses_strangers(
     `expect_at_least` guards the test itself: a module whose routes were all
     renamed away from `candidate_id` would otherwise pass by checking nothing.
     """
-    checked = candidate_scoped_routes(app, params)
+    checked = candidate_scoped_routes(app, params, query)
     assert len(checked) >= expect_at_least, (
         f"found {len(checked)} candidate-scoped routes, expected at least {expect_at_least} — "
         "a check that finds nothing to check passes by accident"
     )
-    found = leaks(client, app, params=params, skip=skip)
+    found = leaks(client, app, params=params, query=query, skip=skip)
     assert not found, "candidate-scoped routes that served a stranger:\n  " + "\n  ".join(
         str(leak) for leak in found
     )

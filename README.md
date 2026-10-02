@@ -105,8 +105,8 @@ must not define dark mode from scratch.
 | `ai_core.schema_repair` | Additive `ALTER TABLE` on startup, so a pull never costs a dev their `dev.db` |
 | `ai_core.models` | **The model roster.** Every LLM id the platform calls, named once |
 | `ai_core.identity` | **Who is asking.** `Principal`, `may_see`, and a fail-closed default |
-| `ai_core.guard` | **The check, enforced.** `candidate_guard()` on a router; `identity_headers()` to forward a student when calling another module (v0.10.0) |
-| `ai_core.testing` | `assert_refuses_strangers(client, app)` — finds every candidate-scoped route from the OpenAPI document and asks it as nobody and as somebody else (v0.10.0) |
+| `ai_core.guard` | **The check, enforced.** `candidate_guard()` on a router — it reads the student from the path, an owned id, or (v0.11.0) the query; `identity_headers()` to forward a student when calling another module (v0.10.0) |
+| `ai_core.testing` | `assert_refuses_strangers(client, app)` — finds every candidate-scoped route from the OpenAPI document, path or (v0.11.0) query, and asks it as nobody and as somebody else (v0.10.0) |
 | `ai_core.outbox` | **"And a worker drains it", once.** Transactional outbox rows, claim-before-send, backoff, a per-pass circuit breaker, visible stuck rows, and a kickable `Sweeper` (v0.10.0) |
 
 ---
