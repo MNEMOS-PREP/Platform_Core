@@ -160,7 +160,6 @@ def test_a_check_that_finds_nothing_to_check_fails():
         assert_refuses_strangers(TestClient(app), app)
 
 
-
 # ── the query names a student (v0.11.0) ──────────────────────────────────
 
 
@@ -177,7 +176,8 @@ def test_a_query_that_names_the_student_is_checked_like_a_path():
 
 def test_a_route_whose_query_names_nobody_is_left_alone():
     client = TestClient(_app())
-    assert client.get("/v1/skill-graph/theta?concepts=x").status_code == 422  # the handler's, not the guard's
+    # 422 is the handler's (no `candidate`), not the guard's.
+    assert client.get("/v1/skill-graph/theta?concepts=x").status_code == 422
 
 
 def test_the_path_decides_when_both_name_a_student():

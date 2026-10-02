@@ -81,14 +81,21 @@ will disagree, and the disagreement will be a leak rather than a bug.
       (`ai_core.guard`) — M01, M02 and M06 had each written the same twenty
       lines by hand, and the copies had started to differ on `session_id`.
 
-      | Module | Guarded | How |
-      |---|---|---|
-      | M01, M02, M06 | ✅ | their own copy (pre-v0.10.0); move to `candidate_guard` on next bump |
-      | M13 | ⬜ | on v0.10.0 (for `ai_core.outbox`); the guard is next |
-      | M04 | ⬜ | holds the skill graph and consent — the most sensitive data unguarded |
-      | M05, M15 | ⬜ | on v0.6.0; need the bump first |
-- ⬜ **Login and signup in `Platform_Shell`**, with the session available to
+      **✅ Every built module, 2026-10-02** (v0.11.0): M01, M02, M04, M05,
+      M06, M13 and M15 take `candidate_guard` on the router and run
+      `assert_refuses_strangers` in their own suites. M01, M02 and M06
+      dropped their hand-written copies.
+- ✅ **Staff routes check a role** (v0.12.0, `require_role`). A route that names
+      no student — a review queue, an ops log — was let through by the guard
+      above, so M13's dispute queue and M15's `/admin/*` answered anyone.
+- ✅ **Module-to-module calls prove themselves** (v0.12.0, `ai_core.service`).
+      One secret, read one way; with nothing configured, a machine secret every
+      module on the host shares, so nothing is open on a fresh clone.
+- 🟡 **Login and signup in `Platform_Shell`**, with the session available to
       every mounted module UI, replacing each module's local candidate control.
+      **v0.12.0 ships the session half:** `getSession()` / `useSession()` /
+      `signIn()` in `@ai/core`, read by every module, and a DEV sign-in screen
+      in the shell (pick a role). The provider half below is still open.
       Specified below — it is the half of this item with no owner and no
       design, and every module that ships before it is another call site to
       change afterwards.
@@ -129,7 +136,7 @@ nineteenth copy of the thing this file exists to prevent.
       `auth_provider_id` stored rather than the provider's whole identity, and
       OIDC for college Google Workspace SSO in Phase 3. Take that, keep it
       swappable, do not build password hashing.
-- ⬜ **One session, read by every mounted module.** The shell already forces one
+- ✅ **One session, read by every mounted module.** (v0.12.0) The shell already forces one
       React instance and one token set; the session belongs beside them. A
       module asks the shell who is asking — it does not read a cookie itself.
 - ⬜ **`candidate_id` stops being a URL parameter for student-facing reads**

@@ -28,9 +28,20 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode
 
-from ai_core.guard import QUERY_NAMES
+from ai_core.guard import QUERY_NAMES, ROLE_SCHEME_PREFIX, role_refusal
+from ai_core.identity import Role
+from ai_core.service import SCHEME_NAME as SERVICE_SCHEME
 
-__all__ = ["Leak", "assert_refuses_strangers", "candidate_scoped_routes", "leaks"]
+__all__ = [
+    "Leak",
+    "assert_refuses_strangers",
+    "assert_service_only",
+    "assert_staff_only",
+    "candidate_scoped_routes",
+    "leaks",
+    "role_gated_routes",
+    "service_routes",
+]
 
 _PARAM = re.compile(r"\{([^}:]+)(?::[^}]+)?\}")
 _SKIP_METHODS = {"HEAD", "OPTIONS"}
@@ -182,3 +193,138 @@ def assert_refuses_strangers(
         str(leak) for leak in found
     )
     return checked
+
+
+# ── v0.12.0: routes about nobody that are still not for everybody ─────────────
+#
+# Found the same way and for the same reason: from the OpenAPI document, where
+# `require_role` and `require_service` each declare a security scheme. A staff
+# route added next month is checked by the test a module writes today.
+
+
+def _secured(app: Any) -> dict[tuple[str, str], list[str]]:
+    """(method, path) -> the security scheme names its operation declares."""
+    found: dict[tuple[str, str], list[str]] = {}
+    openapi = getattr(app, "openapi", None)
+    if not callable(openapi):
+        return found
+    for path, operations in (openapi().get("paths") or {}).items():
+        for method, operation in operations.items():
+            if method.upper() not in _HTTP_METHODS or not isinstance(operation, dict):
+                continue
+            names = [name for entry in operation.get("security") or [] for name in entry]
+            if names:
+                found[(method.upper(), path)] = names
+    return found
+
+
+def role_gated_routes(app: Any) -> dict[tuple[str, str], frozenset[Role]]:
+    """Every (method, path template) behind `require_role`, with its roles."""
+    gated: dict[tuple[str, str], frozenset[Role]] = {}
+    for route, names in _secured(app).items():
+        for name in names:
+            if name.startswith(ROLE_SCHEME_PREFIX):
+                roles = frozenset(Role(r) for r in name[len(ROLE_SCHEME_PREFIX) :].split("+"))
+                gated[route] = gated.get(route, frozenset()) | roles
+    return dict(sorted(gated.items(), key=lambda item: (item[0][1], item[0][0])))
+
+
+def service_routes(app: Any) -> list[tuple[str, str]]:
+    """Every (method, path template) behind `require_service`."""
+    return sorted(
+        (route for route, names in _secured(app).items() if SERVICE_SCHEME in names),
+        key=lambda pair: (pair[1], pair[0]),
+    )
+
+
+def _ask(client: Any, method: str, url: str, headers: dict[str, str]) -> Any:
+    kwargs: dict[str, Any] = {"headers": headers}
+    if method in {"POST", "PUT", "PATCH"}:
+        kwargs["json"] = {}
+    return client.request(method, url, **kwargs)
+
+
+def assert_staff_only(
+    client: Any,
+    app: Any,
+    *,
+    skip: Iterable[tuple[str, str]] = (),
+    expect_at_least: int = 1,
+) -> dict[tuple[str, str], frozenset[Role]]:
+    """Every role-gated route refuses nobody, a student, and every role it does
+    not name — and lets each role it does name past the gate.
+
+    "Past the gate" means anything but 401 and the gate's own 403. A 404 or a
+    422 is fine there: the fake ids and empty bodies this sends are meant to
+    fail, just not at the door. The gate's 403 is told apart from a later one
+    (the candidate guard refusing a placement officer an individual record) by
+    its detail, `role_refusal(roles)`.
+    """
+    gated = role_gated_routes(app)
+    skipped = set(skip)
+    assert len(gated) >= expect_at_least, (
+        f"found {len(gated)} role-gated routes, expected at least {expect_at_least} — "
+        "a check that finds nothing to check passes by accident"
+    )
+    problems: list[str] = []
+    for (method, template), roles in gated.items():
+        if (method, template) in skipped:
+            continue
+        url = _PARAM.sub(OTHER_ID, template)
+        refusal = role_refusal(tuple(roles))
+        response = _ask(client, method, url, {})
+        if response.status_code not in (401, 403):
+            problems.append(f"{method} {template} answered {response.status_code} to nobody")
+        for role in Role:
+            response = _ask(client, method, url, {"X-Role": role.value, "X-Candidate-Id": STRANGER})
+            refused_at_gate = response.status_code == 401 or (
+                response.status_code == 403 and _detail(response) == refusal
+            )
+            if role in roles and refused_at_gate:
+                problems.append(f"{method} {template} refused {role.value}, which it names")
+            if role not in roles and response.status_code not in (401, 403):
+                problems.append(
+                    f"{method} {template} answered {response.status_code} to {role.value}"
+                )
+    assert not problems, "role-gated routes that got it wrong:\n  " + "\n  ".join(problems)
+    return gated
+
+
+def assert_service_only(
+    client: Any,
+    app: Any,
+    *,
+    skip: Iterable[tuple[str, str]] = (),
+    expect_at_least: int = 1,
+) -> list[tuple[str, str]]:
+    """Every service-only route refuses a browser — signed in as anybody, admin
+    included — and a wrong secret. An admin is a person, not a module."""
+    routes = service_routes(app)
+    skipped = set(skip)
+    assert len(routes) >= expect_at_least, (
+        f"found {len(routes)} service-only routes, expected at least {expect_at_least} — "
+        "a check that finds nothing to check passes by accident"
+    )
+    callers = {
+        "nobody": {},
+        "an admin, with no secret": {"X-Role": "admin", "X-Candidate-Id": STRANGER},
+        "a wrong secret": {"X-Service-Secret": "not-the-secret"},
+    }
+    problems: list[str] = []
+    for method, template in routes:
+        if (method, template) in skipped:
+            continue
+        url = _PARAM.sub(OWNER, template)
+        for who, headers in callers.items():
+            response = _ask(client, method, url, headers)
+            if response.status_code != 401:
+                problems.append(f"{method} {template} answered {response.status_code} to {who}")
+    assert not problems, "service-only routes that served a caller:\n  " + "\n  ".join(problems)
+    return routes
+
+
+def _detail(response: Any) -> Any:
+    try:
+        return response.json().get("detail")
+    except Exception:  # noqa: BLE001 - a non-JSON body has no detail
+        return None

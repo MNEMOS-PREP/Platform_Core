@@ -27,10 +27,11 @@ export class ApiError extends Error {
  * wrapper every module already uses, rather than on twenty-two call sites per
  * module across nineteen repos.
  *
- * Set once at startup. Until a real session exists this carries the dev
- * headers, which the backend only honours under `AI_AUTH_MODE=dev`; when
- * `Platform_Shell` grows a login it sets a token here and nothing else in any
- * module changes.
+ * Written by `session.ts` (v0.12.0) whenever someone signs in, out or
+ * switches — modules no longer call this themselves. It carries the dev
+ * headers, which the backend only honours under `AI_AUTH_MODE=dev`; when a
+ * real provider replaces the dev sign-in it sets a token here and nothing else
+ * in any module changes.
  */
 let identityHeaders: Record<string, string> = {};
 

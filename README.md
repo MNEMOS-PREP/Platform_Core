@@ -59,6 +59,7 @@ bump. Your module keeps working on the old version until you choose to move.
 | `Icon` | The icon set. 40 stroke glyphs, `currentColor`, no emoji anywhere |
 | `Card` `Button` `EmptyState` `Spinner` `ErrorNote` | Shared states, for a module that has not grown its own |
 | `api` `relativeDays` `MODULES` | Fetch wrapper, formatting, module registry |
+| `useSession` `signIn` `isStaff` | **Who is signed in, once per page** (v0.12.0). Writes the identity headers `api` sends; replaces each module's own `candidate.ts` id and M15's `?staff=1` flag |
 
 `Layout`, `ModulePlaceholder` and `NavItem` were removed in 0.7.0. **A module
 owns its own frame.** `Layout` claimed a shared one and was imported by nothing;
@@ -105,8 +106,9 @@ must not define dark mode from scratch.
 | `ai_core.schema_repair` | Additive `ALTER TABLE` on startup, so a pull never costs a dev their `dev.db` |
 | `ai_core.models` | **The model roster.** Every LLM id the platform calls, named once |
 | `ai_core.identity` | **Who is asking.** `Principal`, `may_see`, and a fail-closed default |
-| `ai_core.guard` | **The check, enforced.** `candidate_guard()` on a router — it reads the student from the path, an owned id, or (v0.11.0) the query; `identity_headers()` to forward a student when calling another module (v0.10.0) |
-| `ai_core.testing` | `assert_refuses_strangers(client, app)` — finds every candidate-scoped route from the OpenAPI document, path or (v0.11.0) query, and asks it as nobody and as somebody else (v0.10.0) |
+| `ai_core.guard` | **The check, enforced.** `candidate_guard()` on a router — it reads the student from the path, an owned id, or (v0.11.0) the query; `identity_headers()` to forward a student when calling another module (v0.10.0); `require_role(...)` for staff routes that name nobody (v0.12.0) |
+| `ai_core.testing` | `assert_refuses_strangers(client, app)` — finds every candidate-scoped route from the OpenAPI document, path or (v0.11.0) query, and asks it as nobody and as somebody else (v0.10.0). `assert_staff_only` and `assert_service_only` find the gated routes the same way (v0.12.0) |
+| `ai_core.service` | **One module calling another.** `require_service`, `headers()`, `is_service()` — the shared secret, from `SERVICE_SECRET` or else a machine secret every module on one host reads, so a fresh clone is closed and still works (v0.12.0) |
 | `ai_core.outbox` | **"And a worker drains it", once.** Transactional outbox rows, claim-before-send, backoff, a per-pass circuit breaker, visible stuck rows, and a kickable `Sweeper` (v0.10.0) |
 
 ---

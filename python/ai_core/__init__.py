@@ -33,9 +33,19 @@ used in one place each (a lifespan, a router) rather than everywhere:
     from ai_core.outbox import Channel, OutboxRow, Sweeper, post_json
     from ai_core.guard import candidate_guard, identity_headers
     from ai_core.testing import assert_refuses_strangers
+
+v0.12.0 adds the two gates for routes that name no student: `require_role`
+(a review queue, an operations log) and `ai_core.service` (one module calling
+another, proved by a secret every module on a machine shares without anyone
+configuring it). Both declare themselves in the OpenAPI document, which is how
+`assert_staff_only` and `assert_service_only` find them:
+
+    from ai_core.guard import require_role
+    from ai_core.service import headers, is_service, require_service
+    from ai_core.testing import assert_service_only, assert_staff_only
 """
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 
 from ai_core.concepts import (
     Concept,
