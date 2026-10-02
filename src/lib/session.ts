@@ -53,8 +53,13 @@ export const SEEDED_CANDIDATE_ID = "4d0aa1c0-0000-4000-8000-000000000004";
 const KEY = "ai.session";
 /** What each module stored before there was one session. Read once, in this
  *  order (M06 and M15 already preferred M01's), so nobody's browser loses the
- *  student they were. */
-const LEGACY_KEYS = ["m01.candidateId", "m06.candidateId", "m02.candidateId"];
+ *  student they were. The last is M15's per-browser random id. */
+const LEGACY_KEYS = [
+  "m01.candidateId",
+  "m06.candidateId",
+  "m02.candidateId",
+  "ai-interviewer.candidate-id",
+];
 
 const listeners = new Set<() => void>();
 let current: Session | null = load();
