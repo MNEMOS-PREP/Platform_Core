@@ -56,7 +56,7 @@ bump. Your module keeps working on the old version until you choose to move.
 | `DependencyTable` | Developer view of upstream health |
 | `MasteryBar` | The five mastery states. **Cannot render a number for a state that has none.** |
 | `NotYetTested` | The collapsed count for untested concepts — never a row of empty bars |
-| `Icon` | The icon set. 40 stroke glyphs, `currentColor`, no emoji anywhere |
+| `Icon` | The icon set: stroke glyphs listed in `ICON_NAMES`, `currentColor`, no emoji anywhere |
 | `Card` `Button` `EmptyState` `Spinner` `ErrorNote` | Shared states, for a module that has not grown its own |
 | `answerBand` `ANSWER_BAND_LABEL` | **"How did I do?" in words** (v0.13.0): Strong / Partly there / Not yet, from the key points an answer covered — never a number per answer |
 | `api` `relativeDays` `MODULES` | Fetch wrapper, formatting, module registry |

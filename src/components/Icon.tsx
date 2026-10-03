@@ -122,6 +122,10 @@ const PATHS = {
   keyboard:
     "M3 7h18v10H3V7ZM6.5 10.5h.01M9.5 10.5h.01M12.5 10.5h.01M15.5 10.5h.01M8 13.5h8",
   filter: "M4 6h16l-6 7v5.5l-4 1.5V13L4 6Z",
+  // v0.13.1: settings (sliders, not a gear: three lines read at 14px where
+  // a gear's teeth blur) and help.
+  settings: "M4 7h10M18 7h2M16 5v4M4 12h4M12 12h8M10 10v4M4 17h12M18 15v4",
+  help: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM9.5 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-.9.8-.9 1.4V14M12 17h.01",
 } as const;
 
 export type IconName = keyof typeof PATHS;
