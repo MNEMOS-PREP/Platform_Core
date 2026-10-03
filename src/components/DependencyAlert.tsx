@@ -152,8 +152,11 @@ export function DependencyTable({ statuses }: { statuses: DependencyStatus[] }) 
         </tr>
       </thead>
       <tbody>
-        {statuses.map((s) => (
-          <tr key={s.module_id} className="border-b border-line/60 align-top">
+        {statuses.map((s, i) => (
+          // Position as well as id: one module's /deps can list the same
+          // upstream twice (two features need it), and React warned on every
+          // render of the shell's System page.
+          <tr key={`${s.module_id}-${i}`} className="border-b border-line/60 align-top">
             <td className="py-2 pr-3 whitespace-nowrap">
               <span className="font-medium text-ink">{s.module_id}</span>{" "}
               <span className="text-ink-soft">{s.name}</span>
