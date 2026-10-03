@@ -17,7 +17,7 @@
  * prevent, in its own source: a version string that reports a state of the
  * world it is not in. Move all three in the same commit.
  */
-export const CORE_VERSION = "0.12.0";
+export const CORE_VERSION = "0.13.0";
 
 // ── Provenance: the trust contract ────────────────────────────────────────
 export {
@@ -59,6 +59,15 @@ export type { IconName } from "./components/Icon";
 // decision. A module owns its own chrome; this package owns the vocabulary.
 export { Button, Card, EmptyState, ErrorNote, Spinner } from "./components/Shell";
 
+// ── One page header, and loading with a shape (v0.13.0) ──────────────────
+export {
+  HowItWorks,
+  PageHeader,
+  Skeleton,
+  SkeletonCards,
+  SkeletonRows,
+} from "./components/Page";
+
 // ── Utilities ─────────────────────────────────────────────────────────────
 export { ApiError, api, setIdentityHeaders } from "./lib/api";
 
@@ -79,6 +88,13 @@ export {
   useSession,
 } from "./lib/session";
 export type { Role, Session } from "./lib/session";
-export { relativeDays, reportCount, shortDate } from "./lib/format";
+export {
+  ANSWER_BAND_LABEL,
+  answerBand,
+  relativeDays,
+  reportCount,
+  shortDate,
+} from "./lib/format";
+export type { AnswerBand } from "./lib/format";
 export { LIVE_MODULES, MODULES, PLANNED_MODULES } from "./lib/modules";
 export type { ModuleInfo } from "./lib/modules";

@@ -58,7 +58,10 @@ bump. Your module keeps working on the old version until you choose to move.
 | `NotYetTested` | The collapsed count for untested concepts — never a row of empty bars |
 | `Icon` | The icon set. 40 stroke glyphs, `currentColor`, no emoji anywhere |
 | `Card` `Button` `EmptyState` `Spinner` `ErrorNote` | Shared states, for a module that has not grown its own |
+| `answerBand` `ANSWER_BAND_LABEL` | **"How did I do?" in words** (v0.13.0): Strong / Partly there / Not yet, from the key points an answer covered — never a number per answer |
 | `api` `relativeDays` `MODULES` | Fetch wrapper, formatting, module registry |
+| `PageHeader` `HowItWorks` | **One way a screen introduces itself** (v0.13.0): eyebrow, title, one line of subtitle, actions; the reasoning folded into "How this works" |
+| `Skeleton` `SkeletonRows` `SkeletonCards` | Loading in the shape of what is coming, with the label a screen reader needs (v0.13.0) |
 | `useSession` `signIn` `isStaff` | **Who is signed in, once per page** (v0.12.0). Writes the identity headers `api` sends; replaces each module's own `candidate.ts` id and M15's `?staff=1` flag |
 
 `Layout`, `ModulePlaceholder` and `NavItem` were removed in 0.7.0. **A module
