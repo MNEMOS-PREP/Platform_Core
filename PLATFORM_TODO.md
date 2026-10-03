@@ -184,3 +184,19 @@ Two reasons it gets worse with time:
    risky claims — cannot be *enforced* by anyone, only answered. The ethics
    sign-off and the placement cell's policy both land on a system that cannot
    act on either.
+
+---
+
+## 2. ⬜ The model-key loader is written six times.
+
+M01 (`llm.py`), M02 (`llm.py`), M04, M06, M13 and M15 (`keys.py`) each read
+`keys.txt` / `.env` with their own copy of the same twenty lines. The copies
+had already drifted: M02 and M06 read the shared `keys.txt` beside the repos
+and `AI_KEYS_FILE`, and the other four did not — so on a fresh demo machine,
+where that shared file is the only one, M13 found no model and scored
+nothing. All six read the same places since 2026-10-03, each pinned by a test,
+and `Platform_Shell/start.bat` reports where each module will find its key.
+
+**What it needs:** `ai_core.keys.load_keys(__file__)` with those roots, and
+the six copies deleted on each module's next bump — the same move as
+`ai_core.service` made for the service secret.
