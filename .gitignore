@@ -7,3 +7,6 @@ __pycache__/
 *.egg-info/
 .venv/
 *.tsbuildinfo
+
+# The Python package's build output (pip install -e . writes it).
+python/build/
