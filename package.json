@@ -1,7 +1,7 @@
 {
   "name": "@ai/core",
-  "version": "0.13.0",
-  "description": "Shared frontend foundation for the AI Interviewer platform: provenance components, dependency alerts, api client, design tokens",
+  "version": "0.14.0",
+  "description": "Shared frontend foundation for the AI Interviewer platform: provenance components, dependency alerts, api client, design tokens, the interviewer's voice",
   "license": "MIT",
   "type": "module",
   "main": "./src/index.ts",
@@ -18,7 +18,8 @@
     "url": "git+https://github.com/MNEMOS-PREP/Platform_Core.git"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --no-warnings tests/voice.test.ts"
   },
   "peerDependencies": {
     "react": ">=19",

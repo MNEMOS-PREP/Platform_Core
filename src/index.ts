@@ -17,7 +17,7 @@
  * prevent, in its own source: a version string that reports a state of the
  * world it is not in. Move all three in the same commit.
  */
-export const CORE_VERSION = "0.13.0";
+export const CORE_VERSION = "0.14.0";
 
 // ── Provenance: the trust contract ────────────────────────────────────────
 export {
@@ -98,3 +98,19 @@ export {
 export type { AnswerBand } from "./lib/format";
 export { LIVE_MODULES, MODULES, PLANNED_MODULES } from "./lib/modules";
 export type { ModuleInfo } from "./lib/modules";
+
+// ── The interviewer's voice (v0.14.0) ─────────────────────────────────────
+// M11's (Voice_Engine), here because more than one module speaks: M06's
+// interview room and M11's voice check today, M14's discussion room next.
+export { VOICE_SUPPORTED, useInterviewerVoice } from "./voice/useInterviewerVoice";
+export type { InterviewerVoice } from "./voice/useInterviewerVoice";
+export {
+  kindOf,
+  parseVoiceId,
+  pickVoice,
+  rateFor,
+  score as voiceScore,
+  speakable,
+  splitSentences,
+} from "./voice/core";
+export type { VoiceLike, VoiceSpec } from "./voice/core";
