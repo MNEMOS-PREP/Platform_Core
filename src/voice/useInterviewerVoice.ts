@@ -37,11 +37,27 @@
  * changes mid-conversation, except to the browser's if a sentence fails, so a
  * failure costs realism and never sound. Every sentence of a line is asked for
  * at once; M11 makes them in order, so the first plays while the rest are made.
+ *
+ * ── A panel (v0.17.0) ───────────────────────────────────────────────────────
+ * M06's panel says some lines in more than one voice: at a hand-over the
+ * interviewer leaving names the one arriving, who then asks; at the start
+ * everyone says hello. `speak` takes such a line as parts, each naming its
+ * speaker, and every sentence is said in its own speaker's voice — M11's cast
+ * voice for them, or the browser voice their `voice_id` picks. The ledger
+ * still records the line as one line. `speakingPart` names the part being
+ * heard, so the room can light the right face.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../lib/api";
-import { parseVoiceId, pickVoice, rateFor, speakable, splitSentences } from "./core";
+import {
+  parseVoiceId,
+  pickVoice,
+  rateFor,
+  sentencesOf,
+  type Sentence,
+  type SpokenPart,
+} from "./core";
 import { forgetServerVoiceState, serverVoiceState, speakOnServer, type SpokenSentence } from "./server";
 import {
   NO_MARKS,
@@ -101,6 +117,12 @@ export interface InterviewerVoiceOptions {
 
 type Tier = "server" | "browser";
 
+/** What `speak` takes: a line one interviewer says, or a panel's parts. */
+export type SpokenLine = string | readonly SpokenPart[];
+
+/** A sentence ready to say: who says it, and in the browser, with what. */
+type Ready = Sentence & { voice: SpeechSynthesisVoice | null; lang: string; rate: number };
+
 /** A line with no audio this long after it landed is recorded as unheard. */
 const NO_AUDIO_AFTER_MS = 15_000;
 /** A stopped line whose browser never reports the stop is closed anyway. */
@@ -116,10 +138,12 @@ export function useInterviewerVoice(
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>(() => synth?.getVoices() ?? []);
   /** Which line is being said — a turn id, or "idle" / "repeat". */
   const [speakingKey, setSpeakingKey] = useState<string | null>(null);
+  /** Which part of a panel's line is being heard — the room's part id. */
+  const [speakingPart, setSpeakingPart] = useState<string | null>(null);
   /** The browser refused to speak before the student had clicked anything on
    *  this page (a reload mid-interview). One click says the line again. */
   const [blocked, setBlocked] = useState(false);
-  const last = useRef<{ text: string; key: string } | null>(null);
+  const last = useRef<{ line: SpokenLine; key: string } | null>(null);
   /** Bumped by every interruption; a stale utterance's events are ignored. */
   const generation = useRef(0);
   /** Utterances queued and not yet finished, across lines. */
@@ -204,24 +228,28 @@ export function useInterviewerVoice(
       outstanding.current = 0;
       synth?.cancel();
       setSpeakingKey(null);
+      setSpeakingPart(null);
     },
     [close],
   );
 
-  /** A line in the browser's own voice, a sentence per utterance. */
+  /** A line in the browser's own voice, a sentence per utterance, each in
+   *  the voice its speaker's `voice_id` picks. */
   const playInBrowser = useCallback(
-    (line: OpenLine, chunks: string[], offsets: number[], gen: number, key: string) => {
+    (line: OpenLine, chunks: Ready[], offsets: number[], gen: number, key: string) => {
       if (!synth) return;
-      const rate = line.rate;
       chunks.forEach((chunk, index) => {
-        const utterance = new SpeechSynthesisUtterance(chunk);
-        if (voice) utterance.voice = voice;
-        utterance.lang = voice?.lang ?? spec.locale;
-        utterance.rate = rate;
+        const utterance = new SpeechSynthesisUtterance(chunk.text);
+        if (chunk.voice) utterance.voice = chunk.voice;
+        utterance.lang = chunk.lang;
+        utterance.rate = chunk.rate;
         const finished = () => {
           if (gen !== generation.current) return;
           outstanding.current = Math.max(0, outstanding.current - 1);
-          if (outstanding.current === 0) setSpeakingKey(null);
+          if (outstanding.current === 0) {
+            setSpeakingKey(null);
+            setSpeakingPart(null);
+          }
         };
         // The ledger's half of each event runs before the generation check:
         // a line cut short is still a line, and its stop is what is measured.
@@ -245,6 +273,7 @@ export function useInterviewerVoice(
           if (index === 0) activity.current = { wordAt: 0, reportsWords: false };
           setBlocked(false);
           setSpeakingKey(key);
+          setSpeakingPart(chunk.partId);
         };
         utterance.onboundary = (event) => {
           if (event.name && event.name !== "word") return;
@@ -276,12 +305,21 @@ export function useInterviewerVoice(
         synth.speak(utterance);
       });
     },
-    [close, spec, voice],
+    [close],
   );
 
   /** One server sentence, played to its end (or until a stop pauses it). */
   const playClip = useCallback(
-    (clip: SpokenSentence, line: OpenLine, start: number, length: number, last: boolean, gen: number, key: string) =>
+    (
+      clip: SpokenSentence,
+      line: OpenLine,
+      start: number,
+      length: number,
+      last: boolean,
+      gen: number,
+      key: string,
+      partId: string | null,
+    ) =>
       new Promise<void>((resolve) => {
         const audio = new Audio(clip.url);
         playing.current = { audio, url: clip.url, line, start, length };
@@ -302,6 +340,7 @@ export function useInterviewerVoice(
           activity.current = { wordAt: 0, reportsWords: false };
           setBlocked(false);
           setSpeakingKey(key);
+          setSpeakingPart(partId);
         };
         audio.onended = () => {
           line.heard_chars = start + length;
@@ -309,7 +348,10 @@ export function useInterviewerVoice(
             line.ended_at = nowMs();
             line.heard_chars = line.line_chars;
             close(line);
-            if (gen === generation.current) setSpeakingKey(null);
+            if (gen === generation.current) {
+              setSpeakingKey(null);
+              setSpeakingPart(null);
+            }
           }
           done();
         };
@@ -332,13 +374,16 @@ export function useInterviewerVoice(
     [close],
   );
 
-  /** A line in M11's voice: every sentence asked for now, played in order. */
+  /** A line in M11's voice: every sentence asked for now, each in the voice
+   *  cast for its speaker, played in order. */
   const playOnServer = useCallback(
-    (line: OpenLine, chunks: string[], offsets: number[], gen: number, key: string) => {
+    (line: OpenLine, chunks: Ready[], offsets: number[], gen: number, key: string) => {
       line.tier = "server";
       const request = new AbortController();
       requests.current.add(request);
-      const clips = chunks.map((chunk) => speakOnServer(chunk, who.current, request.signal));
+      const clips = chunks.map((chunk) =>
+        speakOnServer(chunk.text, { personaId: chunk.personaId, voiceId: chunk.voiceId }, request.signal),
+      );
       for (const clip of clips) clip.catch(() => undefined);
       chain.current = chain.current.then(async () => {
         for (let i = 0; i < chunks.length; i++) {
@@ -366,7 +411,8 @@ export function useInterviewerVoice(
             line.voice_name = clip.voice;
             setServerVoiceName(clip.voice);
           }
-          await playClip(clip, line, offsets[i] ?? 0, chunks[i]!.length, i === chunks.length - 1, gen, key);
+          const chunk = chunks[i]!;
+          await playClip(clip, line, offsets[i] ?? 0, chunk.text.length, i === chunks.length - 1, gen, key, chunk.partId);
         }
         requests.current.delete(request);
       });
@@ -375,17 +421,33 @@ export function useInterviewerVoice(
   );
 
   const enqueue = useCallback(
-    (text: string, key: string, landedAt: number, carried: RoomMarks) => {
+    (said: SpokenLine, key: string, landedAt: number, carried: RoomMarks) => {
       const gen = generation.current;
-      const spoken = speakable(text);
-      const chunks = splitSentences(spoken);
-      const offsets = chunkOffsets(spoken, chunks);
+      const { line: spoken, sentences } = sentencesOf(said, who.current);
+      if (sentences.length === 0) return;
+      // The browser's voice for each speaker, chosen once per line.
+      const picked = new Map<string, { voice: SpeechSynthesisVoice | null; lang: string; rate: number }>();
+      const chunks: Ready[] = sentences.map((sentence) => {
+        const id = sentence.voiceId ?? "";
+        let choice = picked.get(id);
+        if (!choice) {
+          const wanted = parseVoiceId(sentence.voiceId);
+          const found = pickVoice(voices, wanted);
+          choice = { voice: found, lang: found?.lang ?? wanted.locale, rate: rateFor(wanted.manner) };
+          picked.set(id, choice);
+        }
+        return { ...sentence, ...choice };
+      });
+      const offsets = chunkOffsets(
+        spoken,
+        chunks.map((chunk) => chunk.text),
+      );
       const line: OpenLine = {
         ...newLine({
           id: lineId(),
           key,
-          voiceName: voice?.name ?? null,
-          rate: rateFor(spec.manner),
+          voiceName: chunks[0]!.voice?.name ?? null,
+          rate: chunks[0]!.rate,
           lineChars: spoken.length,
           landedAt,
           marks: carried,
@@ -410,18 +472,18 @@ export function useInterviewerVoice(
         if (gen === generation.current) go(tier.current);
       });
     },
-    [close, playInBrowser, playOnServer, spec, useServer, voice],
+    [close, playInBrowser, playOnServer, useServer, voices],
   );
 
   /** Interrupt whatever is being said and say this instead. */
   const sayNow = useCallback(
-    (text: string, key: string, reason: StopReason) => {
+    (said: SpokenLine, key: string, reason: StopReason) => {
       const landedAt = nowMs();
       stop(reason);
       const gen = generation.current;
       // Chrome drops an utterance queued in the same tick as a cancel.
       window.setTimeout(() => {
-        if (gen === generation.current) enqueue(text, key, landedAt, NO_MARKS);
+        if (gen === generation.current) enqueue(said, key, landedAt, NO_MARKS);
       }, 40);
     },
     [enqueue, stop],
@@ -431,26 +493,26 @@ export function useInterviewerVoice(
    *  Remembered even when the voice is off, so turning it on says it. It
    *  carries the room's marks: this is the line that answers them. */
   const speak = useCallback(
-    (text: string, key: string) => {
-      last.current = { text, key };
+    (said: SpokenLine, key: string) => {
+      last.current = { line: said, key };
       const carried = marks.current;
       marks.current = NO_MARKS;
-      if (enabled) enqueue(text, key, nowMs(), carried);
+      if (enabled) enqueue(said, key, nowMs(), carried);
     },
     [enabled, enqueue],
   );
 
   /** A line the student asked for again ("Repeat the question"). */
   const repeat = useCallback(
-    (text: string, key: string) => {
-      last.current = { text, key };
-      if (enabled) sayNow(text, key, "repeat");
+    (said: SpokenLine, key: string) => {
+      last.current = { line: said, key };
+      if (enabled) sayNow(said, key, "repeat");
     },
     [enabled, sayNow],
   );
 
   const replay = useCallback(() => {
-    if (last.current) sayNow(last.current.text, last.current.key, "repeat");
+    if (last.current) sayNow(last.current.line, last.current.key, "repeat");
   }, [sayNow]);
 
   const setEnabled = useCallback(
@@ -459,7 +521,7 @@ export function useInterviewerVoice(
       writePreference(on);
       if (!on) stop("off");
       // Turned on mid-question: say the question, which is what it is for.
-      else if (last.current) sayNow(last.current.text, last.current.key, "off");
+      else if (last.current) sayNow(last.current.line, last.current.key, "off");
     },
     [sayNow, stop],
   );
@@ -522,6 +584,8 @@ export function useInterviewerVoice(
     enabled,
     setEnabled,
     speakingKey,
+    /** The part of a panel's line being heard (the id the room gave it). */
+    speakingPart,
     blocked,
     speak,
     repeat,

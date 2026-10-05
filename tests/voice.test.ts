@@ -13,6 +13,7 @@ import {
   parseVoiceId,
   pickVoice,
   rateFor,
+  sentencesOf,
   speakable,
   splitSentences,
   type VoiceLike,
@@ -117,6 +118,51 @@ test("long text is split into sentences short enough to speak whole", () => {
     "Tell me about yourself.",
     "Take your time.",
   ]);
+  // A title's full stop is not the end of a sentence.
+  assert.deepEqual(splitSentences("Okay. Dr. Raghavan, over to you."), ["Okay.", "Dr. Raghavan, over to you."]);
+  assert.equal(speakable("Dr. Raghavan, over to you."), "Doctor Raghavan, over to you.");
+});
+
+test("a panel's line is said part by part, each sentence by its own speaker", () => {
+  const room = { personaId: "methodical_engineer", voiceId: "en-IN-female-neutral" };
+  const { line, sentences } = sentencesOf(
+    [
+      { text: "Okay, let's leave that there. Dr. Raghavan, over to you.", id: "t1:0" },
+      {
+        text: "Thanks, Priya. Walk me through the classifier.",
+        personaId: "professor",
+        voiceId: "en-IN-male-measured",
+        id: "t1:1",
+      },
+    ],
+    room,
+  );
+  assert.equal(
+    line,
+    "Okay, let's leave that there. Doctor Raghavan, over to you. Thanks, Priya. Walk me through the classifier.",
+  );
+  assert.deepEqual(
+    sentences.map((s) => [s.personaId, s.partId]),
+    [
+      ["methodical_engineer", "t1:0"],
+      ["methodical_engineer", "t1:0"],
+      ["professor", "t1:1"],
+      ["professor", "t1:1"],
+    ],
+  );
+  assert.equal(sentences[2]!.voiceId, "en-IN-male-measured");
+  // A plain string is one part, said by the room's own interviewer.
+  const plain = sentencesOf("Next question. What is a heap?", room);
+  assert.deepEqual(
+    plain.sentences.map((s) => s.personaId),
+    ["methodical_engineer", "methodical_engineer"],
+  );
+  assert.equal(plain.sentences[0]!.partId, null);
+  // Nothing to say is skipped, not an empty sentence.
+  assert.deepEqual(
+    sentencesOf([{ text: "  " }, { text: "Hi." }], room).sentences.map((s) => s.text),
+    ["Hi."],
+  );
 });
 
 console.log(`\n${passed} passed`);

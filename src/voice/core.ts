@@ -132,8 +132,14 @@ const SAY: [RegExp, string][] = [
   [/\bi\.e\./gi, "that is"],
   [/\betc\./gi, "etcetera"],
   [/\bvs\.?(?=\s)/gi, "versus"],
+  // Titles, as they are said: a panel names "Dr. Raghavan" at every hand-over.
+  [/\bDr\.(?=\s)/g, "Doctor"],
+  [/\bProf\.(?=\s)/g, "Professor"],
   [/&/g, " and "],
 ];
+
+/** Words ending in a full stop that do not end a sentence. */
+const NOT_AN_END = /\b(?:Dr|Mr|Mrs|Ms|Prof|Sr|Jr|St|No)\.$/;
 
 /** A line as it should be heard: code and links are on screen, not read out. */
 export function speakable(text: string): string {
@@ -159,8 +165,16 @@ export function speakable(text: string): string {
  * in between them rather than after a paragraph.
  */
 export function splitSentences(text: string, max = 220): string[] {
+  // "Dr. Raghavan, over to you." is one sentence: a title's full stop is
+  // not an end, and splitting there made a voice say "Dr." alone and pause.
+  const pieces: string[] = [];
+  for (const piece of text.split(/(?<=[.?!])\s+/)) {
+    const previous = pieces.at(-1);
+    if (previous !== undefined && NOT_AN_END.test(previous)) pieces[pieces.length - 1] = `${previous} ${piece}`;
+    else pieces.push(piece);
+  }
   const out: string[] = [];
-  for (const sentence of text.split(/(?<=[.?!])\s+/)) {
+  for (const sentence of pieces) {
     let rest = sentence.trim();
     while (rest.length > max) {
       const cut = Math.max(rest.lastIndexOf(", ", max), rest.lastIndexOf(" ", max));
@@ -171,4 +185,57 @@ export function splitSentences(text: string, max = 220): string[] {
     if (rest) out.push(rest);
   }
   return out;
+}
+
+// ── A panel's line (v0.17.0) ───────────────────────────────────────────────
+// M06's panel (FR-6.3) says some lines in more than one voice: at a hand-over
+// the interviewer leaving names the one arriving, who then asks; at the start
+// everyone says hello. Each part is said in its own speaker's voice.
+
+/** One person's words within a line. */
+export interface SpokenPart {
+  text: string;
+  /** Who says it (an M06 persona id): M11 speaks in the voice cast for them. */
+  personaId?: string | null;
+  /** Their `locale-kind-manner` voice id: the browser's voice is chosen by it. */
+  voiceId?: string | null;
+  /** The room's name for this part, reported back while it is being heard. */
+  id?: string | null;
+}
+
+/** One sentence of a line, and who says it. */
+export interface Sentence {
+  text: string;
+  partId: string | null;
+  personaId: string | null;
+  voiceId: string | null;
+}
+
+/**
+ * A line as it is spoken: the text heard (every part, in order, speakable)
+ * and its sentences, each carrying its speaker. A part that names nobody is
+ * said by the room's own interviewer (`defaults`); a part with nothing to say
+ * is skipped.
+ */
+export function sentencesOf(
+  parts: string | readonly SpokenPart[],
+  defaults: { personaId: string | null; voiceId: string | null },
+): { line: string; sentences: Sentence[] } {
+  const list: readonly SpokenPart[] = typeof parts === "string" ? [{ text: parts }] : parts;
+  const said: string[] = [];
+  const sentences: Sentence[] = [];
+  for (const part of list) {
+    const spoken = speakable(part.text);
+    if (!spoken) continue;
+    said.push(spoken);
+    for (const text of splitSentences(spoken)) {
+      sentences.push({
+        text,
+        partId: part.id ?? null,
+        personaId: part.personaId ?? defaults.personaId,
+        voiceId: part.voiceId ?? defaults.voiceId,
+      });
+    }
+  }
+  return { line: said.join(" "), sentences };
 }
