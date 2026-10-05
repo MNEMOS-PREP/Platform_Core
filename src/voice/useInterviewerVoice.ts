@@ -29,11 +29,20 @@
  * calls `mark("answer_sent")` and `mark("first_token")` so the next line
  * carries the two times only the room knows. Without a session id nothing is
  * posted and the hook behaves exactly as before.
+ *
+ * ── The server voice (v0.16.0) ──────────────────────────────────────────────
+ * Where M11 is running, lines are spoken in the Chatterbox voice M11 casts for
+ * the interviewer (`server.ts`), not the browser's. The room asks once whether
+ * that voice is ready and keeps the answer for the interview — a voice never
+ * changes mid-conversation, except to the browser's if a sentence fails, so a
+ * failure costs realism and never sound. Every sentence of a line is asked for
+ * at once; M11 makes them in order, so the first plays while the rest are made.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../lib/api";
 import { parseVoiceId, pickVoice, rateFor, speakable, splitSentences } from "./core";
+import { forgetServerVoiceState, serverVoiceState, speakOnServer, type SpokenSentence } from "./server";
 import {
   NO_MARKS,
   chunkOffsets,
@@ -83,7 +92,14 @@ export interface InterviewerVoiceOptions {
   /** The interview being spoken in. With it, each line is posted to M11's
    *  latency ledger; without it, nothing is. */
   sessionId?: string | null;
+  /** Who is speaking (an M06 persona id): M11 speaks in the voice cast for
+   *  them. Without it, M11 matches the `voiceId` instead. */
+  personaId?: string | null;
+  /** Use M11's voice when it is ready (the default), or only the browser's. */
+  server?: boolean;
 }
+
+type Tier = "server" | "browser";
 
 /** A line with no audio this long after it landed is recorded as unheard. */
 const NO_AUDIO_AFTER_MS = 15_000;
@@ -118,6 +134,19 @@ export function useInterviewerVoice(
   const marks = useRef<RoomMarks>(NO_MARKS);
   const sessionId = useRef(options.sessionId ?? null);
   sessionId.current = options.sessionId ?? null;
+  const who = useRef({ personaId: options.personaId ?? null, voiceId: voiceId ?? null });
+  who.current = { personaId: options.personaId ?? null, voiceId: voiceId ?? null };
+  const useServer = options.server !== false;
+  /** Which voice this room speaks in — decided at its first line, then kept. */
+  const tier = useRef<Tier | null>(null);
+  const [tierShown, setTierShown] = useState<Tier | null>(null);
+  const [serverVoiceName, setServerVoiceName] = useState<string | null>(null);
+  /** The server line now playing, so a stop can pause it where it is. */
+  const playing = useRef<{ audio: HTMLAudioElement; url: string; line: OpenLine; start: number; length: number } | null>(null);
+  /** Requests for sentences not yet played, cancelled by a stop. */
+  const requests = useRef(new Set<AbortController>());
+  /** Server lines play one after another, never over each other. */
+  const chain = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     if (!synth) return;
@@ -142,6 +171,18 @@ export function useInterviewerVoice(
   const stop = useCallback(
     (reason: StopReason = "end") => {
       const at = nowMs();
+      const now = playing.current;
+      playing.current = null;
+      if (now) {
+        // Heard as far as the audio got through its sentence.
+        const fraction = now.audio.duration ? Math.min(1, now.audio.currentTime / now.audio.duration) : 0;
+        now.line.heard_chars = now.start + Math.round(now.length * fraction);
+        now.audio.pause();
+        URL.revokeObjectURL(now.url);
+      }
+      for (const request of requests.current) request.abort();
+      requests.current.clear();
+      chain.current = Promise.resolve();
       for (const line of [...open.current]) {
         if (line.stop_requested_at === null) {
           line.stop_requested_at = at;
@@ -150,6 +191,10 @@ export function useInterviewerVoice(
         if (line.first_audio_at === null) {
           // Nothing of it was playing: stopped the moment it was asked.
           line.stopped_at = at;
+          close(line);
+        } else if (line.tier === "server") {
+          // A paused <audio> is silent at once; there is no event to wait for.
+          line.stopped_at = nowMs();
           close(line);
         } else if (line.timer === null) {
           line.timer = window.setTimeout(() => close(line), STOP_UNREPORTED_AFTER_MS);
@@ -163,28 +208,11 @@ export function useInterviewerVoice(
     [close],
   );
 
-  const enqueue = useCallback(
-    (text: string, key: string, landedAt: number, carried: RoomMarks) => {
+  /** A line in the browser's own voice, a sentence per utterance. */
+  const playInBrowser = useCallback(
+    (line: OpenLine, chunks: string[], offsets: number[], gen: number, key: string) => {
       if (!synth) return;
-      const gen = generation.current;
-      const spoken = speakable(text);
-      const chunks = splitSentences(spoken);
-      const offsets = chunkOffsets(spoken, chunks);
-      const rate = rateFor(spec.manner);
-      const line: OpenLine = {
-        ...newLine({
-          id: lineId(),
-          key,
-          voiceName: voice?.name ?? null,
-          rate,
-          lineChars: spoken.length,
-          landedAt,
-          marks: carried,
-        }),
-        timer: null,
-      };
-      open.current.add(line);
-      line.timer = window.setTimeout(() => close(line), NO_AUDIO_AFTER_MS);
+      const rate = line.rate;
       chunks.forEach((chunk, index) => {
         const utterance = new SpeechSynthesisUtterance(chunk);
         if (voice) utterance.voice = voice;
@@ -249,6 +277,140 @@ export function useInterviewerVoice(
       });
     },
     [close, spec, voice],
+  );
+
+  /** One server sentence, played to its end (or until a stop pauses it). */
+  const playClip = useCallback(
+    (clip: SpokenSentence, line: OpenLine, start: number, length: number, last: boolean, gen: number, key: string) =>
+      new Promise<void>((resolve) => {
+        const audio = new Audio(clip.url);
+        playing.current = { audio, url: clip.url, line, start, length };
+        const done = () => {
+          if (playing.current?.audio === audio) {
+            playing.current = null;
+            URL.revokeObjectURL(clip.url);
+          }
+          resolve();
+        };
+        audio.onplaying = () => {
+          if (line.first_audio_at === null && line.stop_requested_at === null) {
+            line.first_audio_at = nowMs();
+            if (line.timer !== null) window.clearTimeout(line.timer);
+            line.timer = null;
+          }
+          if (gen !== generation.current) return;
+          activity.current = { wordAt: 0, reportsWords: false };
+          setBlocked(false);
+          setSpeakingKey(key);
+        };
+        audio.onended = () => {
+          line.heard_chars = start + length;
+          if (last && line.stop_requested_at === null) {
+            line.ended_at = nowMs();
+            line.heard_chars = line.line_chars;
+            close(line);
+            if (gen === generation.current) setSpeakingKey(null);
+          }
+          done();
+        };
+        audio.onerror = () => {
+          line.error = "audio: could not play";
+          close(line);
+          done();
+        };
+        audio.play().catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === "NotAllowedError") {
+            line.blocked = true;
+            if (gen === generation.current) setBlocked(true);
+          } else if (!(err instanceof DOMException && err.name === "AbortError")) {
+            line.error = "audio: could not play";
+          }
+          close(line);
+          done();
+        });
+      }),
+    [close],
+  );
+
+  /** A line in M11's voice: every sentence asked for now, played in order. */
+  const playOnServer = useCallback(
+    (line: OpenLine, chunks: string[], offsets: number[], gen: number, key: string) => {
+      line.tier = "server";
+      const request = new AbortController();
+      requests.current.add(request);
+      const clips = chunks.map((chunk) => speakOnServer(chunk, who.current, request.signal));
+      for (const clip of clips) clip.catch(() => undefined);
+      chain.current = chain.current.then(async () => {
+        for (let i = 0; i < chunks.length; i++) {
+          if (gen !== generation.current) return;
+          let clip: SpokenSentence;
+          try {
+            clip = await clips[i]!;
+          } catch (err) {
+            if (gen !== generation.current) return; // a stop cancelled it
+            // The server voice failed mid-line: the rest in the browser's
+            // voice, and the browser's from now on in this room.
+            line.error = `server: ${err instanceof Error ? err.message : "failed"}`.slice(0, 100);
+            tier.current = "browser";
+            setTierShown("browser");
+            forgetServerVoiceState();
+            line.tier = "browser";
+            playInBrowser(line, chunks.slice(i), offsets.slice(i), gen, key);
+            return;
+          }
+          if (gen !== generation.current) {
+            URL.revokeObjectURL(clip.url);
+            return;
+          }
+          if (i === 0) {
+            line.voice_name = clip.voice;
+            setServerVoiceName(clip.voice);
+          }
+          await playClip(clip, line, offsets[i] ?? 0, chunks[i]!.length, i === chunks.length - 1, gen, key);
+        }
+        requests.current.delete(request);
+      });
+    },
+    [playClip, playInBrowser],
+  );
+
+  const enqueue = useCallback(
+    (text: string, key: string, landedAt: number, carried: RoomMarks) => {
+      const gen = generation.current;
+      const spoken = speakable(text);
+      const chunks = splitSentences(spoken);
+      const offsets = chunkOffsets(spoken, chunks);
+      const line: OpenLine = {
+        ...newLine({
+          id: lineId(),
+          key,
+          voiceName: voice?.name ?? null,
+          rate: rateFor(spec.manner),
+          lineChars: spoken.length,
+          landedAt,
+          marks: carried,
+        }),
+        timer: null,
+      };
+      open.current.add(line);
+      line.timer = window.setTimeout(() => close(line), NO_AUDIO_AFTER_MS);
+      const go = (t: Tier) =>
+        t === "server" ? playOnServer(line, chunks, offsets, gen, key) : playInBrowser(line, chunks, offsets, gen, key);
+      if (tier.current) {
+        go(tier.current);
+        return;
+      }
+      // The room's first line decides its voice, for the whole interview.
+      const decided: Promise<Tier> = useServer
+        ? serverVoiceState().then((state) => (state === "ready" ? "server" : "browser"))
+        : Promise.resolve("browser");
+      void decided.then((t) => {
+        tier.current ??= t;
+        setTierShown(tier.current);
+        if (gen === generation.current) go(tier.current);
+      });
+    },
+    [close, playInBrowser, playOnServer, spec, useServer, voice],
   );
 
   /** Interrupt whatever is being said and say this instead. */
@@ -327,6 +489,8 @@ export function useInterviewerVoice(
       mounted.current = false;
       window.setTimeout(() => {
         if (mounted.current) return;
+        playing.current?.audio.pause();
+        for (const request of requests.current) request.abort();
         const at = nowMs();
         for (const line of [...open.current]) {
           line.stop_requested_at ??= at;
@@ -365,6 +529,9 @@ export function useInterviewerVoice(
     replay,
     mark,
     mouth,
-    voiceName: voice?.name ?? null,
+    /** The voice speaking: M11's cast voice key, or the browser voice's name. */
+    voiceName: tierShown === "server" ? serverVoiceName : (voice?.name ?? null),
+    /** Which voice this room speaks in, once its first line has decided it. */
+    tier: tierShown,
   };
 }

@@ -64,7 +64,36 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+/**
+ * POST, and the answer as a Blob with its headers — for audio (v0.16.0, M11's
+ * `/v1/voice/speak`). Same identity headers and error shape as `request`.
+ */
+async function postBlob(
+  path: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; headers: Headers }> {
+  const response = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    body: JSON.stringify(body ?? {}),
+    signal,
+    headers: { "Content-Type": "application/json", ...identityHeaders },
+  });
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const parsed = await response.json();
+      detail = parsed.detail ?? detail;
+    } catch {
+      /* non-JSON error body — keep the status text */
+    }
+    throw new ApiError(response.status, detail);
+  }
+  return { blob: await response.blob(), headers: response.headers };
+}
+
 export const api = {
+  postBlob,
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: JSON.stringify(body ?? {}) }),

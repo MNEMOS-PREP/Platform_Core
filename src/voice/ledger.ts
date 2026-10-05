@@ -36,8 +36,8 @@ export interface LineTiming {
   id: string;
   /** The room's name for the line: a turn id, "idle", "repeat". */
   key: string;
-  /** Which voice tier spoke it (spec §0): 0 is the browser's own. */
-  tier: "browser";
+  /** Which voice spoke it: the browser's own, or M11's (v0.16.0). */
+  tier: "browser" | "server";
   voice_name: string | null;
   rate: number;
   /** Characters in the line as spoken (`speakable`), and how many were heard. */

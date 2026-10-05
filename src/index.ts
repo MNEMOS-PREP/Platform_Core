@@ -17,7 +17,7 @@
  * prevent, in its own source: a version string that reports a state of the
  * world it is not in. Move all three in the same commit.
  */
-export const CORE_VERSION = "0.15.0";
+export const CORE_VERSION = "0.16.0";
 
 // ── Provenance: the trust contract ────────────────────────────────────────
 export {
@@ -106,6 +106,9 @@ export { VOICE_SUPPORTED, useInterviewerVoice } from "./voice/useInterviewerVoic
 export type { InterviewerVoice, InterviewerVoiceOptions } from "./voice/useInterviewerVoice";
 // The latency ledger's browser half (v0.15.0): one record per spoken line.
 export { chunkOffsets, heardThrough, timingsPath } from "./voice/ledger";
+// M11's server voice (v0.16.0): is it ready, and one sentence in a cast voice.
+export { forgetServerVoiceState, serverVoiceState, speakOnServer } from "./voice/server";
+export type { ServerVoiceState, SpokenSentence } from "./voice/server";
 export type { LineTiming, RoomMarks, StopReason } from "./voice/ledger";
 export {
   kindOf,
