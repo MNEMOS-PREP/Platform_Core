@@ -107,6 +107,11 @@ export type { InterviewerVoice, InterviewerVoiceOptions, SpokenLine } from "./vo
 // A panel's line (v0.17.0): parts, each said in its own speaker's voice.
 export { sentencesOf } from "./voice/core";
 export type { Sentence, SpokenPart } from "./voice/core";
+// Hearing the student start to speak (v0.18.0): the mic, and the barge-in rule.
+export { useListening } from "./voice/useListening";
+export type { Listening, ListeningOptions } from "./voice/useListening";
+export { DEFAULT_VAD, dbOf, initialVad, stepVad } from "./voice/vad";
+export type { VadConfig, VadEvent, VadState } from "./voice/vad";
 // The latency ledger's browser half (v0.15.0): one record per spoken line.
 export { chunkOffsets, heardThrough, timingsPath } from "./voice/ledger";
 // M11's server voice (v0.16.0): is it ready, and one sentence in a cast voice.

@@ -51,6 +51,9 @@ export interface LineTiming {
   stop_requested_at: number | null;
   stopped_at: number | null;
   stop_reason: StopReason | null;
+  /** Barge-in (v0.18.0): when the student began speaking over the line — the
+   *  first loud frame, before the 250 ms that made it count (spec §6.5). */
+  speech_started_at: number | null;
   /** The browser refused to speak before a click (autoplay policy). */
   blocked: boolean;
   /** Any other synthesis error the browser reported. */
@@ -97,6 +100,7 @@ export function newLine(init: {
     stop_requested_at: null,
     stopped_at: null,
     stop_reason: null,
+    speech_started_at: null,
     blocked: false,
     error: null,
   };

@@ -49,6 +49,16 @@
  * voice for them, or the browser voice their `voice_id` picks. The ledger
  * still records the line as one line. `speakingPart` names the part being
  * heard, so the room can light the right face.
+ *
+ * ── Barge-in (v0.18.0) ──────────────────────────────────────────────────────
+ * When the student starts speaking over the interviewer (`useListening`
+ * hears it), `bargeIn` stops the line: the sentence playing, the sentences
+ * queued behind it and the ones still being asked of M11 — a stop that only
+ * silenced the speaker would have the interviewer resume mid-sentence (spec
+ * Trap 3). The ledger records when the student began, so the stop is
+ * measured from their first word. Final Boss may contest it (§6.5): the
+ * interviewer keeps going for 1.5 s before yielding, once a round — the room
+ * decides when.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -125,6 +135,9 @@ export type SpokenLine = string | readonly SpokenPart[];
 
 /** A sentence ready to say: who says it, and in the browser, with what. */
 type Ready = Sentence & { voice: SpeechSynthesisVoice | null; lang: string; rate: number };
+
+/** §6.5: a contested barge-in yields after this long. */
+const CONTEST_MS = 1_500;
 
 /** A line with no audio this long after it landed is recorded as unheard. */
 const NO_AUDIO_AFTER_MS = 15_000;
@@ -504,6 +517,38 @@ export function useInterviewerVoice(
     [enqueue, stop],
   );
 
+  /** Whether the interviewer can be heard right now — the listener raises
+   *  its bar while they can (Trap 5). Cheap enough to read every frame. */
+  const isSpeaking = useCallback(
+    () => playing.current !== null || (synth?.speaking ?? false),
+    [],
+  );
+
+  /**
+   * The student began speaking over the interviewer at `startedAt` (spec
+   * §6.5). Stops every line still to be heard — playing, queued, or being
+   * made — and records when the student began. With `contest`, the
+   * interviewer finishes up to 1.5 s more first. False when nothing was being
+   * said, so the room knows it was a turn, not an interruption.
+   */
+  const bargeIn = useCallback(
+    (startedAt: number, opts: { contest?: boolean } = {}) => {
+      const unheard = [...open.current].filter((line) => line.stop_requested_at === null && line.ended_at === null);
+      if (unheard.length === 0) return false;
+      for (const line of unheard) line.speech_started_at ??= startedAt;
+      if (!opts.contest) {
+        stop("barge_in");
+        return true;
+      }
+      window.setTimeout(() => {
+        // Yield — unless the line ended by itself meanwhile.
+        if (unheard.some((line) => open.current.has(line) && line.ended_at === null)) stop("barge_in");
+      }, CONTEST_MS);
+      return true;
+    },
+    [stop],
+  );
+
   /** A new line of the interview, said after anything still being said.
    *  Remembered even when the voice is off, so turning it on says it. It
    *  carries the room's marks: this is the line that answers them. */
@@ -608,6 +653,10 @@ export function useInterviewerVoice(
     replay,
     mark,
     mouth,
+    /** The student began speaking over the interviewer (v0.18.0). */
+    bargeIn,
+    /** Whether the interviewer can be heard right now. */
+    isSpeaking,
     /** The voice speaking: M11's cast voice key, or the browser voice's name. */
     voiceName: tierShown === "server" ? serverVoiceName : (voice?.name ?? null),
     /** Which voice this room speaks in, once its first line has decided it. */
