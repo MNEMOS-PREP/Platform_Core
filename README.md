@@ -62,7 +62,7 @@ bump. Your module keeps working on the old version until you choose to move.
 | `api` `relativeDays` `MODULES` | Fetch wrapper, formatting, module registry |
 | `PageHeader` `HowItWorks` | **One way a screen introduces itself** (v0.13.0): eyebrow, title, one line of subtitle, actions; the reasoning folded into "How this works" |
 | `Skeleton` `SkeletonRows` `SkeletonCards` | Loading in the shape of what is coming, with the label a screen reader needs (v0.13.0) |
-| `useInterviewerVoice` `pickVoice` `speakable` | **The interviewer's voice** (v0.14.0): each line read aloud in the persona's `voice_id`, a sentence at a time, queued, stoppable, with a mouth for the face. M11's code, here because M06 and M11 both speak; `npm test` pins the voice choice |
+| `useInterviewerVoice` `pickVoice` `speakable` | **The interviewer's voice** (v0.14.0): each line read aloud in the persona's `voice_id`, a sentence at a time, queued, stoppable, with a mouth for the face. M11's code, here because M06 and M11 both speak; `npm test` pins the voice choice. **v0.15.0:** each spoken line is measured (landed, first audio, ended or stopped and why, how much was heard) and posted to M11's latency ledger when the room passes `sessionId`; `stop(reason)`, `mark("answer_sent" \| "first_token")` |
 | `useSession` `signIn` `isStaff` | **Who is signed in, once per page** (v0.12.0). Writes the identity headers `api` sends; replaces each module's own `candidate.ts` id and M15's `?staff=1` flag |
 
 `Layout`, `ModulePlaceholder` and `NavItem` were removed in 0.7.0. **A module

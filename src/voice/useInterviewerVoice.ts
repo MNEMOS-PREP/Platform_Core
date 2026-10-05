@@ -21,10 +21,37 @@
  * M11's, in core because more than one module speaks — see `core.ts`. The
  * `m06.voice` preference key is kept from when this lived in M06, so nobody's
  * off switch is lost in the move.
+ *
+ * ── The ledger (v0.15.0) ────────────────────────────────────────────────────
+ * Every line spoken is also measured (`ledger.ts`): when it landed, when its
+ * audio began, when it ended or was stopped and why, how much was heard. Pass
+ * the room's `sessionId` and each finished line is posted to M11; the room
+ * calls `mark("answer_sent")` and `mark("first_token")` so the next line
+ * carries the two times only the room knows. Without a session id nothing is
+ * posted and the hook behaves exactly as before.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { api } from "../lib/api";
 import { parseVoiceId, pickVoice, rateFor, speakable, splitSentences } from "./core";
+import {
+  NO_MARKS,
+  chunkOffsets,
+  heardThrough,
+  lineId,
+  newLine,
+  nowMs,
+  timingsPath,
+  type LineTiming,
+  type RoomMarks,
+  type StopReason,
+} from "./ledger";
+
+/** Best-effort and silent: the ledger measures the product, and a student's
+ *  interview never waits on it or hears about it. M11 down drops the record. */
+function postTiming(sessionId: string, line: LineTiming): void {
+  void api.post(timingsPath(sessionId), line).catch(() => undefined);
+}
 
 const PREFERENCE_KEY = "m06.voice";
 
@@ -52,7 +79,23 @@ export const VOICE_SUPPORTED = synth !== null;
 /** What the hook hands a room: speak, repeat, stop, the off switch, the mouth. */
 export type InterviewerVoice = ReturnType<typeof useInterviewerVoice>;
 
-export function useInterviewerVoice(voiceId: string | null | undefined) {
+export interface InterviewerVoiceOptions {
+  /** The interview being spoken in. With it, each line is posted to M11's
+   *  latency ledger; without it, nothing is. */
+  sessionId?: string | null;
+}
+
+/** A line with no audio this long after it landed is recorded as unheard. */
+const NO_AUDIO_AFTER_MS = 15_000;
+/** A stopped line whose browser never reports the stop is closed anyway. */
+const STOP_UNREPORTED_AFTER_MS = 1_000;
+
+type OpenLine = LineTiming & { timer: number | null };
+
+export function useInterviewerVoice(
+  voiceId: string | null | undefined,
+  options: InterviewerVoiceOptions = {},
+) {
   const [enabled, setEnabledState] = useState(readPreference);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>(() => synth?.getVoices() ?? []);
   /** Which line is being said — a turn id, or "idle" / "repeat". */
@@ -69,6 +112,12 @@ export function useInterviewerVoice(voiceId: string | null | undefined) {
   // the face reads these every frame (see `mouth`), so no React state changes
   // per word.
   const activity = useRef({ wordAt: 0, reportsWords: false });
+  /** Lines spoken and not yet recorded. */
+  const open = useRef(new Set<OpenLine>());
+  /** What the room has marked since the last line, for the next one. */
+  const marks = useRef<RoomMarks>(NO_MARKS);
+  const sessionId = useRef(options.sessionId ?? null);
+  sessionId.current = options.sessionId ?? null;
 
   useEffect(() => {
     if (!synth) return;
@@ -81,40 +130,116 @@ export function useInterviewerVoice(voiceId: string | null | undefined) {
   const spec = useMemo(() => parseVoiceId(voiceId), [voiceId]);
   const voice = useMemo(() => pickVoice(voices, spec), [voices, spec]);
 
-  const stop = useCallback(() => {
-    generation.current += 1;
-    outstanding.current = 0;
-    synth?.cancel();
-    setSpeakingKey(null);
+  /** Record a line, once, and send it to the ledger if there is a session. */
+  const close = useCallback((line: OpenLine) => {
+    if (!open.current.delete(line)) return;
+    if (line.timer !== null) window.clearTimeout(line.timer);
+    const { timer: _timer, ...record } = line;
+    if (sessionId.current) postTiming(sessionId.current, record);
   }, []);
 
+  /** Stop speaking. The reason goes on every line it cuts short. */
+  const stop = useCallback(
+    (reason: StopReason = "end") => {
+      const at = nowMs();
+      for (const line of [...open.current]) {
+        if (line.stop_requested_at === null) {
+          line.stop_requested_at = at;
+          line.stop_reason = reason;
+        }
+        if (line.first_audio_at === null) {
+          // Nothing of it was playing: stopped the moment it was asked.
+          line.stopped_at = at;
+          close(line);
+        } else if (line.timer === null) {
+          line.timer = window.setTimeout(() => close(line), STOP_UNREPORTED_AFTER_MS);
+        }
+      }
+      generation.current += 1;
+      outstanding.current = 0;
+      synth?.cancel();
+      setSpeakingKey(null);
+    },
+    [close],
+  );
+
   const enqueue = useCallback(
-    (text: string, key: string) => {
+    (text: string, key: string, landedAt: number, carried: RoomMarks) => {
       if (!synth) return;
       const gen = generation.current;
-      const chunks = splitSentences(speakable(text));
+      const spoken = speakable(text);
+      const chunks = splitSentences(spoken);
+      const offsets = chunkOffsets(spoken, chunks);
+      const rate = rateFor(spec.manner);
+      const line: OpenLine = {
+        ...newLine({
+          id: lineId(),
+          key,
+          voiceName: voice?.name ?? null,
+          rate,
+          lineChars: spoken.length,
+          landedAt,
+          marks: carried,
+        }),
+        timer: null,
+      };
+      open.current.add(line);
+      line.timer = window.setTimeout(() => close(line), NO_AUDIO_AFTER_MS);
       chunks.forEach((chunk, index) => {
         const utterance = new SpeechSynthesisUtterance(chunk);
         if (voice) utterance.voice = voice;
         utterance.lang = voice?.lang ?? spec.locale;
-        utterance.rate = rateFor(spec.manner);
+        utterance.rate = rate;
         const finished = () => {
           if (gen !== generation.current) return;
           outstanding.current = Math.max(0, outstanding.current - 1);
           if (outstanding.current === 0) setSpeakingKey(null);
         };
+        // The ledger's half of each event runs before the generation check:
+        // a line cut short is still a line, and its stop is what is measured.
+        const ended = () => {
+          if (line.stop_requested_at !== null) {
+            line.stopped_at ??= nowMs();
+            close(line);
+          } else if (index === chunks.length - 1) {
+            line.ended_at = nowMs();
+            line.heard_chars = line.line_chars;
+            close(line);
+          }
+        };
         utterance.onstart = () => {
+          if (line.first_audio_at === null && line.stop_requested_at === null) {
+            line.first_audio_at = nowMs();
+            if (line.timer !== null) window.clearTimeout(line.timer);
+            line.timer = null;
+          }
           if (gen !== generation.current) return;
           if (index === 0) activity.current = { wordAt: 0, reportsWords: false };
           setBlocked(false);
           setSpeakingKey(key);
         };
         utterance.onboundary = (event) => {
-          if (gen !== generation.current || (event.name && event.name !== "word")) return;
+          if (event.name && event.name !== "word") return;
+          if (line.stop_requested_at === null) {
+            line.heard_chars = heardThrough(offsets[index] ?? 0, event.charIndex, event.charLength);
+          }
+          if (gen !== generation.current) return;
           activity.current = { wordAt: performance.now(), reportsWords: true };
         };
-        utterance.onend = finished;
+        utterance.onend = () => {
+          ended();
+          finished();
+        };
         utterance.onerror = (event) => {
+          if (event.error === "not-allowed") {
+            line.blocked = true;
+            close(line);
+          } else if (event.error === "interrupted" || event.error === "canceled") {
+            ended();
+          } else {
+            line.error = event.error;
+            close(line);
+          }
           if (gen !== generation.current) return;
           if (event.error === "not-allowed") setBlocked(true);
           finished();
@@ -123,28 +248,32 @@ export function useInterviewerVoice(voiceId: string | null | undefined) {
         synth.speak(utterance);
       });
     },
-    [spec, voice],
+    [close, spec, voice],
   );
 
   /** Interrupt whatever is being said and say this instead. */
   const sayNow = useCallback(
-    (text: string, key: string) => {
-      stop();
+    (text: string, key: string, reason: StopReason) => {
+      const landedAt = nowMs();
+      stop(reason);
       const gen = generation.current;
       // Chrome drops an utterance queued in the same tick as a cancel.
       window.setTimeout(() => {
-        if (gen === generation.current) enqueue(text, key);
+        if (gen === generation.current) enqueue(text, key, landedAt, NO_MARKS);
       }, 40);
     },
     [enqueue, stop],
   );
 
   /** A new line of the interview, said after anything still being said.
-   *  Remembered even when the voice is off, so turning it on says it. */
+   *  Remembered even when the voice is off, so turning it on says it. It
+   *  carries the room's marks: this is the line that answers them. */
   const speak = useCallback(
     (text: string, key: string) => {
       last.current = { text, key };
-      if (enabled) enqueue(text, key);
+      const carried = marks.current;
+      marks.current = NO_MARKS;
+      if (enabled) enqueue(text, key, nowMs(), carried);
     },
     [enabled, enqueue],
   );
@@ -153,25 +282,38 @@ export function useInterviewerVoice(voiceId: string | null | undefined) {
   const repeat = useCallback(
     (text: string, key: string) => {
       last.current = { text, key };
-      if (enabled) sayNow(text, key);
+      if (enabled) sayNow(text, key, "repeat");
     },
     [enabled, sayNow],
   );
 
   const replay = useCallback(() => {
-    if (last.current) sayNow(last.current.text, last.current.key);
+    if (last.current) sayNow(last.current.text, last.current.key, "repeat");
   }, [sayNow]);
 
   const setEnabled = useCallback(
     (on: boolean) => {
       setEnabledState(on);
       writePreference(on);
-      if (!on) stop();
+      if (!on) stop("off");
       // Turned on mid-question: say the question, which is what it is for.
-      else if (last.current) sayNow(last.current.text, last.current.key);
+      else if (last.current) sayNow(last.current.text, last.current.key, "off");
     },
     [sayNow, stop],
   );
+
+  /**
+   * What only the room knows, for the next line it speaks: the student's
+   * answer was sent (the spec's end of speech, while recognition is the
+   * browser's), and the interviewer's first token streamed back.
+   */
+  const mark = useCallback((what: "answer_sent" | "first_token") => {
+    const at = nowMs();
+    if (what === "answer_sent") marks.current = { answer_sent_at: at, first_token_at: null };
+    else if (marks.current.answer_sent_at !== null && marks.current.first_token_at === null) {
+      marks.current = { ...marks.current, first_token_at: at };
+    }
+  }, []);
 
   // Leaving the room silences it — a tick later, and only if the room is
   // really gone. React's StrictMode runs this cleanup between its two mounts
@@ -184,10 +326,18 @@ export function useInterviewerVoice(voiceId: string | null | undefined) {
     return () => {
       mounted.current = false;
       window.setTimeout(() => {
-        if (!mounted.current) synth?.cancel();
+        if (mounted.current) return;
+        const at = nowMs();
+        for (const line of [...open.current]) {
+          line.stop_requested_at ??= at;
+          line.stop_reason ??= "leave";
+          line.stopped_at ??= at;
+          close(line);
+        }
+        synth?.cancel();
       }, 0);
     };
-  }, []);
+  }, [close]);
 
   /**
    * How open the mouth is, 0 to 1, for this frame. Opens on each word and
@@ -213,6 +363,7 @@ export function useInterviewerVoice(voiceId: string | null | undefined) {
     repeat,
     stop,
     replay,
+    mark,
     mouth,
     voiceName: voice?.name ?? null,
   };

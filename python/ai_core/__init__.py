@@ -45,7 +45,7 @@ configuring it). Both declare themselves in the OpenAPI document, which is how
     from ai_core.testing import assert_service_only, assert_staff_only
 """
 
-__version__ = "0.14.0"
+__version__ = "0.15.0"
 
 from ai_core.concepts import (
     Concept,
