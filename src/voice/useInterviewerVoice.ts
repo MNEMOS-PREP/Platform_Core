@@ -35,8 +35,11 @@
  * the interviewer (`server.ts`), not the browser's. The room asks once whether
  * that voice is ready and keeps the answer for the interview — a voice never
  * changes mid-conversation, except to the browser's if a sentence fails, so a
- * failure costs realism and never sound. Every sentence of a line is asked for
- * at once; M11 makes them in order, so the first plays while the rest are made.
+ * failure costs realism and never sound. Sentences are asked for in speaking
+ * order, each as soon as the one before it is made (v0.17.1): M11 makes one
+ * at a time, so asking for all at once only let them race — a panel's
+ * opening was heard to wait five seconds for its first sentence while M11
+ * made the last one first. The first plays while the next is being made.
  *
  * ── A panel (v0.17.0) ───────────────────────────────────────────────────────
  * M06's panel says some lines in more than one voice: at a hand-over the
@@ -171,6 +174,8 @@ export function useInterviewerVoice(
   const requests = useRef(new Set<AbortController>());
   /** Server lines play one after another, never over each other. */
   const chain = useRef<Promise<void>>(Promise.resolve());
+  /** Sentences are asked of M11 one after another, in speaking order. */
+  const asking = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     if (!synth) return;
@@ -207,6 +212,7 @@ export function useInterviewerVoice(
       for (const request of requests.current) request.abort();
       requests.current.clear();
       chain.current = Promise.resolve();
+      asking.current = Promise.resolve();
       for (const line of [...open.current]) {
         if (line.stop_requested_at === null) {
           line.stop_requested_at = at;
@@ -381,9 +387,18 @@ export function useInterviewerVoice(
       line.tier = "server";
       const request = new AbortController();
       requests.current.add(request);
-      const clips = chunks.map((chunk) =>
-        speakOnServer(chunk.text, { personaId: chunk.personaId, voiceId: chunk.voiceId }, request.signal),
-      );
+      // In speaking order, each asked for when the one before it is made.
+      const clips = chunks.map((chunk) => {
+        const made = asking.current.then(() => {
+          if (request.signal.aborted) throw new DOMException("stopped", "AbortError");
+          return speakOnServer(chunk.text, { personaId: chunk.personaId, voiceId: chunk.voiceId }, request.signal);
+        });
+        asking.current = made.then(
+          () => undefined,
+          () => undefined,
+        );
+        return made;
+      });
       for (const clip of clips) clip.catch(() => undefined);
       chain.current = chain.current.then(async () => {
         for (let i = 0; i < chunks.length; i++) {
