@@ -20,6 +20,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { nowMs } from "./ledger";
+import { savedNoiseFloor } from "./micCheck";
 import { DEFAULT_VAD, initialVad, stepVad, type VadConfig, type VadState } from "./vad";
 import { ASR_RATE, encodeWav, joinSamples } from "./wav";
 
@@ -47,6 +48,8 @@ export interface Listening {
   error: string | null;
   /** How loud, 0–1 over the room's floor, for a meter. Read per frame. */
   level: () => number;
+  /** The room's noise floor as measured so far, dBFS (day 10's mic check). */
+  floorDb: () => number | null;
   /** What the mic heard between two times on the ledger's clock, as a 16 kHz
    *  WAV — or null when no audio is kept (`keepAudio` off, or a browser
    *  without an audio thread). */
@@ -131,6 +134,7 @@ export function useListening(options: ListeningOptions): Listening {
   const latest = useRef(options);
   latest.current = options;
   const levelNow = useRef(0);
+  const floorNow = useRef<number | null>(null);
   /** Kept audio, frame by frame, each with when it was heard. */
   const kept = useRef<{ at: number; pcm: Int16Array }[]>([]);
 
@@ -145,7 +149,9 @@ export function useListening(options: ListeningOptions): Listening {
     let context: AudioContext | null = null;
     let timer: number | null = null;
     let url: string | null = null;
-    let vad: VadState = initialVad();
+    // The mic check's measurement of this room, when there is one: the bar
+    // is right from the first frame instead of a guess the floor corrects.
+    let vad: VadState = initialVad(savedNoiseFloor() ?? -60);
     const config: VadConfig = { ...DEFAULT_VAD, ...latest.current.config };
 
     const frame = (db: number, pcm?: Int16Array) => {
@@ -161,6 +167,7 @@ export function useListening(options: ListeningOptions): Listening {
       vad = out.state;
       // 0 at the floor, 1 at 40 dB above it.
       levelNow.current = Math.max(0, Math.min(1, (db - vad.floorDb) / 40));
+      floorNow.current = vad.floorDb;
       if (out.event?.kind === "start") {
         setSpeaking(true);
         latest.current.onSpeechStart?.(out.event.at, out.event.decidedAt);
@@ -229,6 +236,6 @@ export function useListening(options: ListeningOptions): Listening {
     return new Blob([wav], { type: "audio/wav" });
   };
 
-  return { active, speaking, error, level: () => levelNow.current, audioBetween };
+  return { active, speaking, error, level: () => levelNow.current, floorDb: () => floorNow.current, audioBetween };
 }
 

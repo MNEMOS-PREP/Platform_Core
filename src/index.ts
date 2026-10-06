@@ -123,6 +123,10 @@ export type { SpokenTurn, TurnTaking, TurnTakingOptions } from "./voice/useTurnT
 export { DEFAULT_ENDPOINT, adaptiveSilenceMs, decide, initialEndpoint, modelSaid, speechEnded, speechStarted, turnTaken } from "./voice/endpoint";
 export type { Decision, EndpointConfig, EndpointState } from "./voice/endpoint";
 export { serverTurnReady, turnFinishedOnServer } from "./voice/turn";
+// The microphone check and echo (v0.22.0): the room's floor, kept; a
+// transcription round trip; the interviewer's words coming back.
+export { heardBack, isEcho, overlap, roomFrom, savedNoiseFloor, saveNoiseFloor } from "./voice/micCheck";
+export type { Room } from "./voice/micCheck";
 export type { TurnVerdict } from "./voice/turn";
 // The latency ledger's browser half (v0.15.0): one record per spoken line.
 export { chunkOffsets, heardThrough, timingsPath } from "./voice/ledger";
