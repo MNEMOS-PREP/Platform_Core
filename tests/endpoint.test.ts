@@ -97,4 +97,39 @@ test("the next turn starts fresh but keeps the speaker's pauses", () => {
   assert.equal(DEFAULT_ENDPOINT.capMs, 2500);
 });
 
+test("a long answer's pause between sentences is waited out (v0.24.0)", () => {
+  // Five seconds of explanation, then the ~700 ms a student pauses between
+  // two sentences: the live run answered here. Now the model is not asked
+  // until a full second of quiet.
+  let s = speechStarted(initialEndpoint(), 0);
+  s = speechEnded(s, 5000);
+  assert.deepEqual(decide(s, 5700, true), { kind: "wait", until: 6000 });
+  assert.deepEqual(decide(s, 6000, true), { kind: "ask", quietSince: 5000 });
+  // A short answer is still answered at the spec's 550.
+  let short = speechStarted(initialEndpoint(), 0);
+  short = speechEnded(short, 1800);
+  assert.deepEqual(decide(short, 2350, true), { kind: "ask", quietSince: 1800 });
+});
+
+test("a turn taken too soon is learned from, and counted (v0.24.0)", () => {
+  let s = speechStarted(initialEndpoint(), 0);
+  s = speechEnded(s, 5000);
+  s = turnTaken(s, { endedAt: 5000, takenAt: 6100 });
+  // They carry on 1.2 s after the silence began, 0.1 s after it was taken.
+  s = speechStarted(s, 6200);
+  assert.deepEqual(s.pauses, [1200]);
+  assert.equal(s.cutShort, 1);
+  assert.equal(adaptiveSilenceMs(s.pauses), 1400, "the next pause is waited out");
+  // Speech long after a turn is a new turn, not a continuation.
+  let t = speechStarted(initialEndpoint(), 0);
+  t = speechEnded(t, 2000);
+  t = turnTaken(t, { endedAt: 2000, takenAt: 2600 });
+  t = speechStarted(t, 9000);
+  assert.deepEqual(t.pauses, []);
+  assert.equal(t.cutShort, 0);
+  // Without the times, nothing is assumed.
+  const u = speechStarted(turnTaken(speechEnded(speechStarted(initialEndpoint(), 0), 2000)), 2100);
+  assert.equal(u.cutShort, 0);
+});
+
 console.log(`\n${passed} passed`);

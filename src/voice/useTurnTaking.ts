@@ -74,6 +74,9 @@ export interface TurnTaking extends Listening {
   /** End the turn now with what has been said so far — the student switched
    *  to typing mid-answer (FR-11.14). Call BEFORE turning listening off. */
   flush: () => void;
+  /** Turns taken too soon this session — the student carried on within
+   *  1.5 s (AC-11.3's premature cut-off, v0.24.0). */
+  cutShort: () => number;
 }
 
 /** A turn's audio from a moment before its first word to just after its last. */
@@ -174,7 +177,12 @@ export function useTurnTaking(options: TurnTakingOptions): TurnTaking {
     clear();
     setDeciding(false);
     generation.current += 1;
-    state.current = turnTaken(state.current);
+    // A switch is the student's own choice: speech after it is not a sign
+    // the turn was taken too soon.
+    state.current = turnTaken(
+      state.current,
+      end.how === "switch" ? null : { endedAt: end.endedAt, takenAt: nowMs() },
+    );
     const base = { startedAt: end.startedAt, endedAt: end.endedAt, how: end.how, silenceMs: end.silenceMs };
     const audio = listening.audioBetween(end.startedAt - BEFORE_MS, end.endedAt + AFTER_MS);
     if (!audio || !recogniser.current) {
@@ -207,5 +215,5 @@ export function useTurnTaking(options: TurnTakingOptions): TurnTaking {
   }, [options.enabled]);
   useEffect(() => clear, []);
 
-  return { ...listening, deciding, writing: writing > 0, thresholdMs, flush };
+  return { ...listening, deciding, writing: writing > 0, thresholdMs, flush, cutShort: () => state.current.cutShort };
 }
