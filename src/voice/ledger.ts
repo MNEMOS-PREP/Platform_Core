@@ -45,6 +45,9 @@ export interface LineTiming {
   heard_chars: number | null;
   answer_sent_at: number | null;
   first_token_at: number | null;
+  /** v0.20.1: where the student's speech actually ended (a spoken turn's
+   *  end, `useTurnTaking`) — the clock AC-11.1 is measured from. */
+  speech_ended_at: number | null;
   landed_at: number;
   first_audio_at: number | null;
   ended_at: number | null;
@@ -67,9 +70,10 @@ export interface LineTiming {
 export interface RoomMarks {
   answer_sent_at: number | null;
   first_token_at: number | null;
+  speech_ended_at: number | null;
 }
 
-export const NO_MARKS: RoomMarks = { answer_sent_at: null, first_token_at: null };
+export const NO_MARKS: RoomMarks = { answer_sent_at: null, first_token_at: null, speech_ended_at: null };
 
 /** Now, on the page's monotonic clock, as epoch milliseconds. */
 export function nowMs(): number {
@@ -97,6 +101,7 @@ export function newLine(init: {
     heard_chars: null,
     answer_sent_at: marks.answer_sent_at,
     first_token_at: marks.first_token_at,
+    speech_ended_at: marks.speech_ended_at,
     landed_at: init.landedAt,
     first_audio_at: null,
     ended_at: null,

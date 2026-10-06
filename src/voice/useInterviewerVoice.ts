@@ -594,10 +594,13 @@ export function useInterviewerVoice(
    * answer was sent (the spec's end of speech, while recognition is the
    * browser's), and the interviewer's first token streamed back.
    */
-  const mark = useCallback((what: "answer_sent" | "first_token") => {
+  const mark = useCallback((what: "answer_sent" | "first_token", speechEndedAt?: number | null) => {
     const at = nowMs();
-    if (what === "answer_sent") marks.current = { answer_sent_at: at, first_token_at: null };
-    else if (marks.current.answer_sent_at !== null && marks.current.first_token_at === null) {
+    if (what === "answer_sent") {
+      // A spoken answer says where its speech ended (v0.20.1); a typed one
+      // has no such moment.
+      marks.current = { answer_sent_at: at, first_token_at: null, speech_ended_at: speechEndedAt ?? null };
+    } else if (marks.current.answer_sent_at !== null && marks.current.first_token_at === null) {
       marks.current = { ...marks.current, first_token_at: at };
     }
   }, []);

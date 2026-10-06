@@ -60,11 +60,13 @@ test("a new line carries the room's marks, and only when given", () => {
     rate: 0.97,
     lineChars: 10,
     landedAt: 900,
-    marks: { answer_sent_at: 100, first_token_at: 400 },
+    marks: { answer_sent_at: 100, first_token_at: 400, speech_ended_at: 40 },
   });
   assert.equal(answered.answer_sent_at, 100);
   assert.equal(answered.first_token_at, 400);
-  assert.deepEqual(NO_MARKS, { answer_sent_at: null, first_token_at: null });
+  assert.equal(answered.speech_ended_at, 40, "a spoken answer says where its speech ended");
+  assert.equal(plain.speech_ended_at, null);
+  assert.deepEqual(NO_MARKS, { answer_sent_at: null, first_token_at: null, speech_ended_at: null });
 });
 
 test("line ids are UUIDs, which the server takes as its idempotency key", () => {
