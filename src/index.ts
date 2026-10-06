@@ -116,6 +116,14 @@ export type { VadConfig, VadEvent, VadState } from "./voice/vad";
 export { serverAsrAvailable, transcribeOnServer } from "./voice/asr";
 export type { AsrResult, AsrWord } from "./voice/asr";
 export { ASR_RATE, encodeWav } from "./voice/wav";
+// A spoken turn, start to finish (v0.20.0): the speaker's own pauses, then
+// M11's turn model, then one transcription for the whole turn.
+export { useTurnTaking } from "./voice/useTurnTaking";
+export type { SpokenTurn, TurnTaking, TurnTakingOptions } from "./voice/useTurnTaking";
+export { DEFAULT_ENDPOINT, adaptiveSilenceMs, decide, initialEndpoint, modelSaid, speechEnded, speechStarted, turnTaken } from "./voice/endpoint";
+export type { Decision, EndpointConfig, EndpointState } from "./voice/endpoint";
+export { serverTurnReady, turnFinishedOnServer } from "./voice/turn";
+export type { TurnVerdict } from "./voice/turn";
 // The latency ledger's browser half (v0.15.0): one record per spoken line.
 export { chunkOffsets, heardThrough, timingsPath } from "./voice/ledger";
 // M11's server voice (v0.16.0): is it ready, and one sentence in a cast voice.
