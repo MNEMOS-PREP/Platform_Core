@@ -112,6 +112,10 @@ export { useListening } from "./voice/useListening";
 export type { Listening, ListeningOptions } from "./voice/useListening";
 export { DEFAULT_VAD, dbOf, initialVad, stepVad } from "./voice/vad";
 export type { VadConfig, VadEvent, VadState } from "./voice/vad";
+// The student's words, heard by M11 (v0.19.0): word timestamps from a WAV.
+export { serverAsrAvailable, transcribeOnServer } from "./voice/asr";
+export type { AsrResult, AsrWord } from "./voice/asr";
+export { ASR_RATE, encodeWav } from "./voice/wav";
 // The latency ledger's browser half (v0.15.0): one record per spoken line.
 export { chunkOffsets, heardThrough, timingsPath } from "./voice/ledger";
 // M11's server voice (v0.16.0): is it ready, and one sentence in a cast voice.

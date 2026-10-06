@@ -92,8 +92,20 @@ async function postBlob(
   return { blob: await response.blob(), headers: response.headers };
 }
 
+/** POST audio itself — a WAV or WebM body — and read JSON back (v0.19.0,
+ *  M11's `/v1/voice/transcribe`). Same identity headers and error shape. */
+function postAudio<T>(path: string, audio: Blob, signal?: AbortSignal): Promise<T> {
+  return request<T>(path, {
+    method: "POST",
+    body: audio,
+    signal,
+    headers: { "Content-Type": audio.type || "audio/wav" },
+  });
+}
+
 export const api = {
   postBlob,
+  postAudio,
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: JSON.stringify(body ?? {}) }),
