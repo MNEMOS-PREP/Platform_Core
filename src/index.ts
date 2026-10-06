@@ -69,7 +69,7 @@ export {
 } from "./components/Page";
 
 // ── Utilities ─────────────────────────────────────────────────────────────
-export { ApiError, api, setIdentityHeaders } from "./lib/api";
+export { ApiError, api, isOffline, setIdentityHeaders } from "./lib/api";
 
 // ── The session: who is signed in, once per page (v0.12.0) ───────────────
 export {
@@ -125,7 +125,19 @@ export type { Decision, EndpointConfig, EndpointState } from "./voice/endpoint";
 export { serverTurnReady, turnFinishedOnServer } from "./voice/turn";
 // The microphone check and echo (v0.22.0): the room's floor, kept; a
 // transcription round trip; the interviewer's words coming back.
-export { heardBack, isEcho, overlap, roomFrom, savedNoiseFloor, saveNoiseFloor } from "./voice/micCheck";
+export {
+  firstWordLost,
+  heardBack,
+  isEcho,
+  looksLikeBluetooth,
+  overlap,
+  roomFrom,
+  savedNoiseFloor,
+  saveNoiseFloor,
+} from "./voice/micCheck";
+// Live captions from M11's recogniser (v0.25.0, FR-11.3).
+export { CAPTION_EVERY_MS, CAPTION_WINDOW_MS, captionFrom, useRollingCaption } from "./voice/caption";
+export type { Caption, CaptionWord } from "./voice/caption";
 export type { Room } from "./voice/micCheck";
 // Day 11-12 (v0.23.0): when the interviewer answers, a clause-sized first
 // chunk, and the student's answers kept with consent.

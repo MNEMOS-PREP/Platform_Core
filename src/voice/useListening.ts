@@ -54,6 +54,12 @@ export interface Listening {
    *  WAV — or null when no audio is kept (`keepAudio` off, or a browser
    *  without an audio thread). */
   audioBetween: (from: number, to: number) => Blob | null;
+  /** EC-11.12 (v0.25.0): the device took the microphone — a phone call,
+   *  most often. Nothing is heard until it gives it back. */
+  interrupted: boolean;
+  /** The microphone in use (EC-11.7: a Bluetooth headset clips the first
+   *  moment of speech): its name, and the rate it records at. */
+  device: { label: string; sampleRate: number | null } | null;
 }
 
 /** How much audio is kept: an answer longer than this is cut to its end. */
@@ -131,6 +137,8 @@ export function useListening(options: ListeningOptions): Listening {
   const [active, setActive] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [interrupted, setInterrupted] = useState(false);
+  const [device, setDevice] = useState<Listening["device"]>(null);
   const latest = useRef(options);
   latest.current = options;
   const levelNow = useRef(0);
@@ -184,6 +192,25 @@ export function useListening(options: ListeningOptions): Listening {
         });
         if (stopped) return;
         context = new AudioContext();
+        // EC-11.12: a call takes the microphone. The browser mutes the track
+        // (or interrupts the context, on iOS) and gives it back afterwards.
+        const track = stream.getAudioTracks()[0];
+        if (track) {
+          const settings = track.getSettings?.() ?? {};
+          setDevice({ label: track.label ?? "", sampleRate: settings.sampleRate ?? null });
+          track.addEventListener("mute", () => !stopped && setInterrupted(true));
+          track.addEventListener("unmute", () => !stopped && setInterrupted(false));
+          track.addEventListener("ended", () => !stopped && setInterrupted(true));
+        }
+        const ctx = context;
+        ctx.addEventListener("statechange", () => {
+          if (stopped) return;
+          // "interrupted" is Safari's word for a call; a suspension we did not
+          // ask for is the same thing elsewhere.
+          const state = ctx.state as string;
+          if (state === "interrupted" || state === "suspended") setInterrupted(true);
+          else if (state === "running") setInterrupted(false);
+        });
         const source = context.createMediaStreamSource(stream);
         if (context.audioWorklet) {
           url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
@@ -225,6 +252,7 @@ export function useListening(options: ListeningOptions): Listening {
       kept.current = [];
       setActive(false);
       setSpeaking(false);
+      setInterrupted(false);
     };
   }, [options.enabled]);
 
@@ -236,6 +264,15 @@ export function useListening(options: ListeningOptions): Listening {
     return new Blob([wav], { type: "audio/wav" });
   };
 
-  return { active, speaking, error, level: () => levelNow.current, floorDb: () => floorNow.current, audioBetween };
+  return {
+    active,
+    speaking,
+    error,
+    level: () => levelNow.current,
+    floorDb: () => floorNow.current,
+    audioBetween,
+    interrupted,
+    device,
+  };
 }
 

@@ -80,3 +80,20 @@ export function heardBack(expected: string, heard: string): number {
 export function isEcho(heard: string, interviewerSaid: string): boolean {
   return words(heard).length >= 3 && overlap(heard, interviewerSaid) >= 0.6;
 }
+
+/** EC-11.7: a Bluetooth headset in its calling mode (hands-free profile)
+ *  records at 8–16 kHz and clips the first moment of speech. Known by its
+ *  name, or by the narrow rate it records at. */
+export function looksLikeBluetooth(label: string, sampleRate?: number | null): boolean {
+  if (/bluetooth|hands-?free|headset|airpods|buds|\bbt\b/i.test(label)) return true;
+  return typeof sampleRate === "number" && sampleRate > 0 && sampleRate <= 16_000;
+}
+
+/** EC-11.7, measured: the sentence read in the mic check came back without
+ *  its first word while the rest of it did — the start of speech is cut. */
+export function firstWordLost(expected: string, heard: string): boolean {
+  const said = words(expected);
+  const back = words(heard);
+  if (said.length < 4 || back.length === 0) return false;
+  return back[0] !== said[0] && !back.slice(0, 2).includes(said[0]!) && overlap(said.slice(1).join(" "), heard) >= 0.6;
+}

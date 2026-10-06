@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 
-import { heardBack, isEcho, overlap, roomFrom } from "../src/voice/micCheck.ts";
+import { firstWordLost, heardBack, isEcho, looksLikeBluetooth, overlap, roomFrom } from "../src/voice/micCheck.ts";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -34,6 +34,21 @@ test("the interviewer's own words coming back through the mic are echo", () => {
   assert.ok(!isEcho("I used a held-out test set from a different hospital", asked));
   assert.ok(!isEcho("the classifier", asked), "two words are not enough to tell");
   assert.ok(overlap("you built the classifier", asked) < 1, "order matters");
+});
+
+test("a Bluetooth headset in its calling mode, by name or by rate (EC-11.7)", () => {
+  assert.ok(looksLikeBluetooth("Headset (Galaxy Buds2) Hands-Free AG Audio"));
+  assert.ok(looksLikeBluetooth("AirPods Pro"));
+  assert.ok(looksLikeBluetooth("Microphone (USB Audio)", 16000), "a narrow rate is a calling mode");
+  assert.ok(!looksLikeBluetooth("Microphone Array (Intel Smart Sound)", 48000));
+  assert.ok(!looksLikeBluetooth("", null));
+});
+
+test("a mic check that lost the first word of the sentence (EC-11.7)", () => {
+  const sentence = "I'm ready for my interview with the panel.";
+  assert.ok(firstWordLost(sentence, "ready for my interview with the panel."));
+  assert.ok(!firstWordLost(sentence, "I'm ready for my interview with the panel."));
+  assert.ok(!firstWordLost(sentence, "something else entirely"), "nothing came back: another problem");
 });
 
 console.log(`\n${passed} passed`);

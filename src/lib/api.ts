@@ -8,6 +8,15 @@
 
 const BASE = import.meta.env.VITE_API_BASE ?? "";
 
+/** A request that never reached the server — no network — as against one
+ *  the server answered with a refusal (`ApiError`). EC-11.15: an answer that
+ *  could not be sent offline is kept and sent when the network is back. */
+export function isOffline(err: unknown): boolean {
+  if (err instanceof ApiError) return false;
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+  return err instanceof TypeError;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
