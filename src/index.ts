@@ -103,10 +103,10 @@ export type { ModuleInfo } from "./lib/modules";
 // M11's (Voice_Engine), here because more than one module speaks: M06's
 // interview room and M11's voice check today, M14's discussion room next.
 export { VOICE_SUPPORTED, useInterviewerVoice } from "./voice/useInterviewerVoice";
-export type { InterviewerVoice, InterviewerVoiceOptions, SpokenLine } from "./voice/useInterviewerVoice";
+export type { BargeInCut, InterviewerVoice, InterviewerVoiceOptions, SpokenLine } from "./voice/useInterviewerVoice";
 // A panel's line (v0.17.0): parts, each said in its own speaker's voice.
-export { sentencesOf } from "./voice/core";
-export type { Sentence, SpokenPart } from "./voice/core";
+export { cutAt, partRanges, sentencesOf } from "./voice/core";
+export type { PartRange, Sentence, SpokenPart } from "./voice/core";
 // Hearing the student start to speak (v0.18.0): the mic, and the barge-in rule.
 export { useListening } from "./voice/useListening";
 export type { Listening, ListeningOptions } from "./voice/useListening";

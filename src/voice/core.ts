@@ -203,6 +203,35 @@ export interface SpokenPart {
   id?: string | null;
 }
 
+/** Where one part of a line sits in the line as spoken, in characters. */
+export interface PartRange {
+  id: string | null;
+  start: number;
+  end: number;
+}
+
+/** The parts' ranges, from the line's sentences and where each begins. */
+export function partRanges(sentences: readonly { text: string; partId: string | null }[], offsets: readonly number[]): PartRange[] {
+  const ranges: PartRange[] = [];
+  sentences.forEach((sentence, i) => {
+    const start = offsets[i] ?? 0;
+    const end = start + sentence.text.length;
+    const last = ranges[ranges.length - 1];
+    if (last && last.id === sentence.partId) last.end = end;
+    else ranges.push({ id: sentence.partId, start, end });
+  });
+  return ranges;
+}
+
+/** Where the student came in (FR-11.9): the part being heard and how far
+ *  through it, 0–1, from how many characters of the line were heard. */
+export function cutAt(ranges: readonly PartRange[], heardChars: number): { partId: string | null; heard: number } {
+  if (ranges.length === 0) return { partId: null, heard: 0 };
+  const part = ranges.find((r) => heardChars < r.end) ?? ranges[ranges.length - 1]!;
+  const span = Math.max(1, part.end - part.start);
+  return { partId: part.id, heard: Math.max(0, Math.min(1, (heardChars - part.start) / span)) };
+}
+
 /** One sentence of a line, and who says it. */
 export interface Sentence {
   text: string;

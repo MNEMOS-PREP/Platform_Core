@@ -1,6 +1,6 @@
 {
   "name": "@ai/core",
-  "version": "0.20.1",
+  "version": "0.21.0",
   "description": "Shared frontend foundation for the AI Interviewer platform: provenance components, dependency alerts, api client, design tokens, the interviewer's voice",
   "license": "MIT",
   "type": "module",

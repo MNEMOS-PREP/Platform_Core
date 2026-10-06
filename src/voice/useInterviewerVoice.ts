@@ -64,10 +64,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../lib/api";
 import {
+  cutAt,
   parseVoiceId,
+  partRanges,
   pickVoice,
   rateFor,
   sentencesOf,
+  type PartRange,
   type Sentence,
   type SpokenPart,
 } from "./core";
@@ -144,7 +147,17 @@ const NO_AUDIO_AFTER_MS = 15_000;
 /** A stopped line whose browser never reports the stop is closed anyway. */
 const STOP_UNREPORTED_AFTER_MS = 1_000;
 
-type OpenLine = LineTiming & { timer: number | null };
+type OpenLine = LineTiming & { timer: number | null; parts: PartRange[] };
+
+/** Where a student came in over a line (FR-11.9), for the room to record. */
+export interface BargeInCut {
+  /** The room's key for the line: its last turn id. */
+  key: string;
+  /** The part being heard (the id the room gave it), or null. */
+  partId: string | null;
+  /** How far through that part the student had heard, 0–1. */
+  heard: number;
+}
 
 export function useInterviewerVoice(
   voiceId: string | null | undefined,
@@ -205,7 +218,7 @@ export function useInterviewerVoice(
   const close = useCallback((line: OpenLine) => {
     if (!open.current.delete(line)) return;
     if (line.timer !== null) window.clearTimeout(line.timer);
-    const { timer: _timer, ...record } = line;
+    const { timer: _timer, parts: _parts, ...record } = line;
     if (sessionId.current) postTiming(sessionId.current, record);
   }, []);
 
@@ -481,6 +494,7 @@ export function useInterviewerVoice(
           marks: carried,
         }),
         timer: null,
+        parts: partRanges(chunks, offsets),
       };
       open.current.add(line);
       line.timer = window.setTimeout(() => close(line), NO_AUDIO_AFTER_MS);
@@ -532,20 +546,27 @@ export function useInterviewerVoice(
    * said, so the room knows it was a turn, not an interruption.
    */
   const bargeIn = useCallback(
-    (startedAt: number, opts: { contest?: boolean } = {}) => {
+    (startedAt: number, opts: { contest?: boolean; onCut?: (cut: BargeInCut) => void } = {}) => {
       const unheard = [...open.current].filter((line) => line.stop_requested_at === null && line.ended_at === null);
       if (unheard.length === 0) return false;
       for (const line of unheard) {
         line.speech_started_at ??= startedAt;
         if (opts.contest) line.contested = true;
       }
-      if (!opts.contest) {
+      // FR-11.9: where the student came in — the line that was being heard,
+      // and how far into it (`stop` sets how much was heard).
+      const cut = () => {
         stop("barge_in");
+        const heardLine = unheard.find((line) => line.first_audio_at !== null) ?? unheard[0]!;
+        opts.onCut?.({ key: heardLine.key, ...cutAt(heardLine.parts, heardLine.heard_chars ?? 0) });
+      };
+      if (!opts.contest) {
+        cut();
         return true;
       }
       window.setTimeout(() => {
         // Yield — unless the line ended by itself meanwhile.
-        if (unheard.some((line) => open.current.has(line) && line.ended_at === null)) stop("barge_in");
+        if (unheard.some((line) => open.current.has(line) && line.ended_at === null)) cut();
       }, CONTEST_MS);
       return true;
     },

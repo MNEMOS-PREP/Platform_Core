@@ -12,6 +12,8 @@ import {
   kindOf,
   parseVoiceId,
   pickVoice,
+  cutAt,
+  partRanges,
   rateFor,
   sentencesOf,
   speakable,
@@ -163,6 +165,27 @@ test("a panel's line is said part by part, each sentence by its own speaker", ()
     sentencesOf([{ text: "  " }, { text: "Hi." }], room).sentences.map((s) => s.text),
     ["Hi."],
   );
+});
+
+test("where the student came in over a panel's line (FR-11.9)", () => {
+  // "Okay. Over to you." (part 0, chars 0-18) then "Thanks. What is a heap?" (part 1, 19-41)
+  const sentences = [
+    { text: "Okay.", partId: "t:0" },
+    { text: "Over to you.", partId: "t:0" },
+    { text: "Thanks.", partId: "t:1" },
+    { text: "What is a heap?", partId: "t:1" },
+  ];
+  const ranges = partRanges(sentences, [0, 6, 19, 27]);
+  assert.deepEqual(ranges, [
+    { id: "t:0", start: 0, end: 18 },
+    { id: "t:1", start: 19, end: 42 },
+  ]);
+  assert.deepEqual(cutAt(ranges, 9), { partId: "t:0", heard: 0.5 });
+  const second = cutAt(ranges, 30);
+  assert.equal(second.partId, "t:1");
+  assert.ok(Math.abs(second.heard - 11 / 23) < 1e-9);
+  assert.deepEqual(cutAt(ranges, 99), { partId: "t:1", heard: 1 }, "past the end: all heard");
+  assert.deepEqual(cutAt([], 5), { partId: null, heard: 0 });
 });
 
 console.log(`\n${passed} passed`);
