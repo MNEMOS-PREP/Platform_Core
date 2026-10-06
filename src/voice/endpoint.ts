@@ -22,10 +22,11 @@
  * pause after a complete sentence, which the turn model heard — rightly — as
  * a sentence that had ended, though the answer had not.
  *
- * 3. **A long answer gets room.** Once an answer has run 4 s, a pause must
+ * 3. **A long answer gets room.** Once an answer has run 2 s, a pause must
  *    reach 1 s before the model is asked. A pause between two sentences of
  *    an explanation is not the end of it; a short "O(n)." is still answered
- *    at the spec's quick 550.
+ *    at the spec's quick 550. (4 s in v0.24.0; a second live run cut "I would
+ *    profile first to see where the time goes." — three seconds — v0.24.1.)
  * 4. **A turn taken too soon is learned from.** Speech within 1.5 s of a
  *    turn being taken means the student was not finished. The silence it was
  *    taken on was one of their pauses: it is learned, so the next is waited
@@ -64,7 +65,7 @@ export const DEFAULT_ENDPOINT: EndpointConfig = {
   capMs: 2500,
   minPauseMs: 150,
   window: 12,
-  longAfterMs: 4000,
+  longAfterMs: 2000,
   longMinMs: 1000,
   rejoinMs: 1500,
 };

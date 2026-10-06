@@ -43,20 +43,20 @@ test("a pause the student comes back from is learned; a breath is not", () => {
 });
 
 test("without a turn model, the silence alone ends the turn at the threshold", () => {
-  let s = speechStarted(initialEndpoint(), 1000);
+  let s = speechStarted(initialEndpoint(), 2500); // a short answer: the spec's 550
   s = speechEnded(s, 4000);
   assert.deepEqual(decide(s, 4300, false), { kind: "wait", until: 4550 });
   const end = decide(s, 4550, false);
   assert.equal(end.kind, "end");
   if (end.kind === "end") {
-    assert.equal(end.startedAt, 1000);
+    assert.equal(end.startedAt, 2500);
     assert.equal(end.endedAt, 4000, "the turn ended when the speech did");
     assert.equal(end.how, "silence");
   }
 });
 
 test("with a turn model, the threshold is when to ask, and 'finished' ends it", () => {
-  let s = speechStarted(initialEndpoint(), 0);
+  let s = speechStarted(initialEndpoint(), 1500); // a short answer: the spec's 550
   s = speechEnded(s, 3000);
   assert.deepEqual(decide(s, 3550, true), { kind: "ask", quietSince: 3000 });
   const { decision } = modelSaid(s, 3000, true, 3580);
@@ -105,6 +105,11 @@ test("a long answer's pause between sentences is waited out (v0.24.0)", () => {
   s = speechEnded(s, 5000);
   assert.deepEqual(decide(s, 5700, true), { kind: "wait", until: 6000 });
   assert.deepEqual(decide(s, 6000, true), { kind: "ask", quietSince: 5000 });
+  // Three seconds is long enough: "I would profile first to see where the
+  // time goes." was cut in the second live run (v0.24.1).
+  let three = speechStarted(initialEndpoint(), 0);
+  three = speechEnded(three, 3000);
+  assert.deepEqual(decide(three, 3700, true), { kind: "wait", until: 4000 });
   // A short answer is still answered at the spec's 550.
   let short = speechStarted(initialEndpoint(), 0);
   short = speechEnded(short, 1800);
