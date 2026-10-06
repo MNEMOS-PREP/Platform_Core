@@ -127,6 +127,20 @@ export { serverTurnReady, turnFinishedOnServer } from "./voice/turn";
 // transcription round trip; the interviewer's words coming back.
 export { heardBack, isEcho, overlap, roomFrom, savedNoiseFloor, saveNoiseFloor } from "./voice/micCheck";
 export type { Room } from "./voice/micCheck";
+// Day 11-12 (v0.23.0): when the interviewer answers, a clause-sized first
+// chunk, and the student's answers kept with consent.
+export { deliberateMs, naturalGapMs, silenceBeforeMs } from "./voice/silence";
+export type { SilenceInput } from "./voice/silence";
+export { firstClause } from "./voice/core";
+export {
+  forgetKeptAnswers,
+  keepAnswerAudio,
+  keepingAnswers,
+  keptAnswers,
+  keptAnswerUrl,
+  setKeepingAnswers,
+} from "./voice/kept";
+export type { KeptAnswer } from "./voice/kept";
 export type { TurnVerdict } from "./voice/turn";
 // The latency ledger's browser half (v0.15.0): one record per spoken line.
 export { chunkOffsets, heardThrough, timingsPath } from "./voice/ledger";

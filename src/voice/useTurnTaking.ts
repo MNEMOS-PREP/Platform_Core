@@ -39,8 +39,12 @@ export interface SpokenTurn {
   /** M11's words for the whole turn; null when the recogniser could not. */
   text: string | null;
   asr: AsrResult | null;
-  /** What called the turn over: the turn model, or the silence alone. */
-  how: "model" | "silence";
+  /** What called the turn over: the turn model, the silence alone, or the
+   *  student switching to typing mid-answer (FR-11.14). */
+  how: "model" | "silence" | "switch";
+  /** The turn's audio as sent to the recogniser — for keeping, with
+   *  consent (FR-11.19). Null when none was kept. */
+  audio: Blob | null;
   /** How much silence passed before it was called. */
   silenceMs: number;
 }
@@ -55,6 +59,9 @@ export interface TurnTakingOptions {
   onSpeechStart?: (startedAt: number) => void;
   /** The student finished a turn. */
   onTurn: (turn: SpokenTurn) => void;
+  /** A pause inside a turn that is not (yet) its end, with how long the
+   *  student has been talking — when an interviewer says "mm-hm" (FR-11.11). */
+  onPause?: (info: { at: number; talkingMs: number }) => void;
 }
 
 export interface TurnTaking extends Listening {
@@ -64,6 +71,9 @@ export interface TurnTaking extends Listening {
   writing: boolean;
   /** The silence that ends this speaker's turn now, in ms (FR-11.4). */
   thresholdMs: number;
+  /** End the turn now with what has been said so far — the student switched
+   *  to typing mid-answer (FR-11.14). Call BEFORE turning listening off. */
+  flush: () => void;
 }
 
 /** A turn's audio from a moment before its first word to just after its last. */
@@ -113,6 +123,8 @@ export function useTurnTaking(options: TurnTakingOptions): TurnTaking {
     },
     onSpeechEnd: (endedAt) => {
       state.current = speechEnded(state.current, endedAt);
+      const began = state.current.startedAt;
+      if (began !== null) latest.current.onPause?.({ at: endedAt, talkingMs: endedAt - began });
       step();
     },
   });
@@ -158,21 +170,31 @@ export function useTurnTaking(options: TurnTakingOptions): TurnTaking {
       });
   }
 
-  function finish(end: Extract<Decision, { kind: "end" }>) {
+  function finish(end: { startedAt: number; endedAt: number; how: SpokenTurn["how"]; silenceMs: number }) {
     clear();
     setDeciding(false);
+    generation.current += 1;
     state.current = turnTaken(state.current);
     const base = { startedAt: end.startedAt, endedAt: end.endedAt, how: end.how, silenceMs: end.silenceMs };
-    const audio = recogniser.current ? listening.audioBetween(end.startedAt - BEFORE_MS, end.endedAt + AFTER_MS) : null;
-    if (!audio) {
-      latest.current.onTurn({ ...base, text: null, asr: null });
+    const audio = listening.audioBetween(end.startedAt - BEFORE_MS, end.endedAt + AFTER_MS);
+    if (!audio || !recogniser.current) {
+      latest.current.onTurn({ ...base, text: null, asr: null, audio });
       return;
     }
     setWriting((n) => n + 1);
     transcribeOnServer(audio, latest.current.context?.())
-      .then((asr) => latest.current.onTurn({ ...base, text: asr.text.trim(), asr }))
-      .catch(() => latest.current.onTurn({ ...base, text: null, asr: null }))
+      .then((asr) => latest.current.onTurn({ ...base, text: asr.text.trim(), asr, audio }))
+      .catch(() => latest.current.onTurn({ ...base, text: null, asr: null, audio }))
       .finally(() => setWriting((n) => Math.max(0, n - 1)));
+  }
+
+  /** FR-11.14: the student switches to typing mid-answer — what they said so
+   *  far is written down and handed over, not lost with the microphone. */
+  function flush() {
+    const began = state.current.startedAt;
+    if (began === null) return;
+    const now = nowMs();
+    finish({ startedAt: began, endedAt: state.current.quietSince ?? now, how: "switch", silenceMs: 0 });
   }
 
   // Turned off (or the room paused): no turn is half-taken.
@@ -185,5 +207,5 @@ export function useTurnTaking(options: TurnTakingOptions): TurnTaking {
   }, [options.enabled]);
   useEffect(() => clear, []);
 
-  return { ...listening, deciding, writing: writing > 0, thresholdMs };
+  return { ...listening, deciding, writing: writing > 0, thresholdMs, flush };
 }

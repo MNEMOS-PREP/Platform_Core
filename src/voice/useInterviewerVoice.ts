@@ -59,6 +59,15 @@
  * measured from their first word. Final Boss may contest it (§6.5): the
  * interviewer keeps going for 1.5 s before yielding, once a round — the room
  * decides when.
+ *
+ * ── Timing (v0.23.0) ────────────────────────────────────────────────────────
+ * `speak(line, key, { notBefore })` holds the first sound until the room's
+ * calibrated gap has passed (`silence.ts`, FR-11.10) — never sooner than a
+ * person would answer, and sometimes a deliberate silence. A part's
+ * `pauseAfterMs` is a silence inside the line — the note-taking pause
+ * (FR-11.12). `backchannel(text, who)` says a soft "mm-hm" on a separate
+ * channel while the student talks (FR-11.11): not a line, not on the ledger,
+ * never queued behind the interviewer, and only with M11's voice.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -200,6 +209,8 @@ export function useInterviewerVoice(
   const requests = useRef(new Set<AbortController>());
   /** Server lines play one after another, never over each other. */
   const chain = useRef<Promise<void>>(Promise.resolve());
+  /** A backchannel playing on its own channel (FR-11.11). */
+  const aside = useRef<HTMLAudioElement | null>(null);
   /** Sentences are asked of M11 one after another, in speaking order. */
   const asking = useRef<Promise<void>>(Promise.resolve());
 
@@ -239,6 +250,8 @@ export function useInterviewerVoice(
       requests.current.clear();
       chain.current = Promise.resolve();
       asking.current = Promise.resolve();
+      aside.current?.pause();
+      aside.current = null;
       for (const line of [...open.current]) {
         if (line.stop_requested_at === null) {
           line.stop_requested_at = at;
@@ -268,8 +281,13 @@ export function useInterviewerVoice(
   /** A line in the browser's own voice, a sentence per utterance, each in
    *  the voice its speaker's `voice_id` picks. */
   const playInBrowser = useCallback(
-    (line: OpenLine, chunks: Ready[], offsets: number[], gen: number, key: string) => {
+    function playGroup(line: OpenLine, all: Ready[], allOffsets: number[], gen: number, key: string) {
       if (!synth) return;
+      // A pause inside the line (FR-11.12): say up to it, wait, say the rest.
+      const cut = all.findIndex((chunk, i) => chunk.pauseAfterMs > 0 && i < all.length - 1);
+      const chunks = cut < 0 ? all : all.slice(0, cut + 1);
+      const offsets = cut < 0 ? allOffsets : allOffsets.slice(0, cut + 1);
+      const lastGroup = cut < 0;
       chunks.forEach((chunk, index) => {
         const utterance = new SpeechSynthesisUtterance(chunk.text);
         if (chunk.voice) utterance.voice = chunk.voice;
@@ -289,10 +307,16 @@ export function useInterviewerVoice(
           if (line.stop_requested_at !== null) {
             line.stopped_at ??= nowMs();
             close(line);
-          } else if (index === chunks.length - 1) {
+          } else if (index === chunks.length - 1 && lastGroup) {
             line.ended_at = nowMs();
             line.heard_chars = line.line_chars;
             close(line);
+          } else if (index === chunks.length - 1) {
+            window.setTimeout(() => {
+              if (gen === generation.current) {
+                playGroup(line, all.slice(cut + 1), allOffsets.slice(cut + 1), gen, key);
+              }
+            }, chunk.pauseAfterMs);
           }
         };
         utterance.onstart = () => {
@@ -409,7 +433,7 @@ export function useInterviewerVoice(
   /** A line in M11's voice: every sentence asked for now, each in the voice
    *  cast for its speaker, played in order. */
   const playOnServer = useCallback(
-    (line: OpenLine, chunks: Ready[], offsets: number[], gen: number, key: string) => {
+    (line: OpenLine, chunks: Ready[], offsets: number[], gen: number, key: string, notBefore: number) => {
       line.tier = "server";
       const request = new AbortController();
       requests.current.add(request);
@@ -451,9 +475,20 @@ export function useInterviewerVoice(
           if (i === 0) {
             line.voice_name = clip.voice;
             setServerVoiceName(clip.voice);
+            // FR-11.10: never sooner than a person would answer.
+            const wait = notBefore - nowMs();
+            if (wait > 0) await new Promise((r) => window.setTimeout(r, wait));
+            if (gen !== generation.current) {
+              URL.revokeObjectURL(clip.url);
+              return;
+            }
           }
           const chunk = chunks[i]!;
           await playClip(clip, line, offsets[i] ?? 0, chunk.text.length, i === chunks.length - 1, gen, key, chunk.partId);
+          if (chunk.pauseAfterMs > 0 && i < chunks.length - 1 && gen === generation.current) {
+            // FR-11.12: a note-taking pause inside the line.
+            await new Promise((r) => window.setTimeout(r, chunk.pauseAfterMs));
+          }
         }
         requests.current.delete(request);
       });
@@ -462,7 +497,7 @@ export function useInterviewerVoice(
   );
 
   const enqueue = useCallback(
-    (said: SpokenLine, key: string, landedAt: number, carried: RoomMarks) => {
+    (said: SpokenLine, key: string, landedAt: number, carried: RoomMarks, notBefore = 0) => {
       const gen = generation.current;
       const { line: spoken, sentences } = sentencesOf(said, who.current);
       if (sentences.length === 0) return;
@@ -498,8 +533,14 @@ export function useInterviewerVoice(
       };
       open.current.add(line);
       line.timer = window.setTimeout(() => close(line), NO_AUDIO_AFTER_MS);
-      const go = (t: Tier) =>
-        t === "server" ? playOnServer(line, chunks, offsets, gen, key) : playInBrowser(line, chunks, offsets, gen, key);
+      const go = (t: Tier) => {
+        if (t === "server") return playOnServer(line, chunks, offsets, gen, key, notBefore);
+        const wait = notBefore - nowMs();
+        if (wait <= 0) return playInBrowser(line, chunks, offsets, gen, key);
+        window.setTimeout(() => {
+          if (gen === generation.current) playInBrowser(line, chunks, offsets, gen, key);
+        }, wait);
+      };
       if (tier.current) {
         go(tier.current);
         return;
@@ -534,8 +575,41 @@ export function useInterviewerVoice(
   /** Whether the interviewer can be heard right now — the listener raises
    *  its bar while they can (Trap 5). Cheap enough to read every frame. */
   const isSpeaking = useCallback(
-    () => playing.current !== null || (synth?.speaking ?? false),
+    () => playing.current !== null || aside.current !== null || (synth?.speaking ?? false),
     [],
+  );
+
+  /**
+   * FR-11.11: a soft backchannel ("mm-hm") while the student talks, on its
+   * own channel — never queued behind a line, never on the ledger, quieter
+   * than the interviewer's voice, and only in M11's voice (the browser's
+   * would queue behind the line). Dropped when it would arrive late: an
+   * "mm-hm" a second after the pause it answers is a non sequitur.
+   */
+  const backchannel = useCallback(
+    (text: string, who: { personaId?: string | null; voiceId?: string | null }) => {
+      if (!enabled || tier.current !== "server" || aside.current || playing.current) return;
+      const asked = nowMs();
+      void speakOnServer(text, who)
+        .then((clip) => {
+          if (nowMs() - asked > 900 || aside.current || playing.current) {
+            URL.revokeObjectURL(clip.url);
+            return;
+          }
+          const audio = new Audio(clip.url);
+          audio.volume = 0.45;
+          aside.current = audio;
+          const done = () => {
+            if (aside.current === audio) aside.current = null;
+            URL.revokeObjectURL(clip.url);
+          };
+          audio.onended = done;
+          audio.onerror = done;
+          audio.play().catch(done);
+        })
+        .catch(() => undefined);
+    },
+    [enabled],
   );
 
   /**
@@ -577,11 +651,11 @@ export function useInterviewerVoice(
    *  Remembered even when the voice is off, so turning it on says it. It
    *  carries the room's marks: this is the line that answers them. */
   const speak = useCallback(
-    (said: SpokenLine, key: string) => {
+    (said: SpokenLine, key: string, opts: { notBefore?: number } = {}) => {
       last.current = { line: said, key };
       const carried = marks.current;
       marks.current = NO_MARKS;
-      if (enabled) enqueue(said, key, nowMs(), carried);
+      if (enabled) enqueue(said, key, nowMs(), carried, opts.notBefore ?? 0);
     },
     [enabled, enqueue],
   );
@@ -682,6 +756,8 @@ export function useInterviewerVoice(
     mouth,
     /** The student began speaking over the interviewer (v0.18.0). */
     bargeIn,
+    /** A soft "mm-hm" on its own channel while the student talks (v0.23.0). */
+    backchannel,
     /** Whether the interviewer can be heard right now. */
     isSpeaking,
     /** The voice speaking: M11's cast voice key, or the browser voice's name. */

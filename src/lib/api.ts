@@ -103,9 +103,27 @@ function postAudio<T>(path: string, audio: Blob, signal?: AbortSignal): Promise<
   });
 }
 
+/** GET a Blob — kept audio (v0.23.0, M11's `/v1/voice/{s}/audio/{t}`).
+ *  Same identity headers and error shape as `request`. */
+async function getBlob(path: string, signal?: AbortSignal): Promise<Blob> {
+  const response = await fetch(`${BASE}${path}`, { signal, headers: { ...identityHeaders } });
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      detail = body.detail ?? detail;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new ApiError(response.status, detail);
+  }
+  return response.blob();
+}
+
 export const api = {
   postBlob,
   postAudio,
+  getBlob,
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: JSON.stringify(body ?? {}) }),

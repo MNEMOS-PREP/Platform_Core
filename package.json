@@ -1,6 +1,6 @@
 {
   "name": "@ai/core",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "description": "Shared frontend foundation for the AI Interviewer platform: provenance components, dependency alerts, api client, design tokens, the interviewer's voice",
   "license": "MIT",
   "type": "module",
@@ -19,7 +19,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --no-warnings tests/voice.test.ts && node --experimental-strip-types --no-warnings tests/ledger.test.ts && node --experimental-strip-types --no-warnings tests/vad.test.ts && node --experimental-strip-types --no-warnings tests/wav.test.ts && node --experimental-strip-types --no-warnings tests/endpoint.test.ts && node --experimental-strip-types --no-warnings tests/micCheck.test.ts"
+    "test": "node --experimental-strip-types --no-warnings tests/voice.test.ts && node --experimental-strip-types --no-warnings tests/ledger.test.ts && node --experimental-strip-types --no-warnings tests/vad.test.ts && node --experimental-strip-types --no-warnings tests/wav.test.ts && node --experimental-strip-types --no-warnings tests/endpoint.test.ts && node --experimental-strip-types --no-warnings tests/micCheck.test.ts && node --experimental-strip-types --no-warnings tests/silence.test.ts"
   },
   "peerDependencies": {
     "react": ">=19",

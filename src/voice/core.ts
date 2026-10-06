@@ -201,6 +201,8 @@ export interface SpokenPart {
   voiceId?: string | null;
   /** The room's name for this part, reported back while it is being heard. */
   id?: string | null;
+  /** Silence after this part, ms — a note-taking pause (FR-11.12). */
+  pauseAfterMs?: number;
 }
 
 /** Where one part of a line sits in the line as spoken, in characters. */
@@ -238,6 +240,26 @@ export interface Sentence {
   partId: string | null;
   personaId: string | null;
   voiceId: string | null;
+  /** Silence after this sentence, ms: its part's pause, on its last sentence. */
+  pauseAfterMs: number;
+}
+
+/** FR-11.7: a long first sentence is cut at its first clause, so the first
+ *  audio is made from a few words, not a paragraph — the voice is made at
+ *  ~2x real time on a CPU, so a short first chunk is heard seconds sooner,
+ *  and a comma is where a speaker breathes anyway. */
+export function firstClause(sentence: string, minWords = 4, longWords = 12): string[] {
+  const count = (text: string) => text.split(/\s+/).filter(Boolean).length;
+  if (count(sentence) <= longWords) return [sentence];
+  // The first clause boundary that leaves a real clause on both sides:
+  // "Thanks," alone is not one.
+  for (const match of sentence.matchAll(/[,;:—–] /g)) {
+    const at = (match.index ?? 0) + 1;
+    const head = sentence.slice(0, at).trim();
+    const tail = sentence.slice(at).trim();
+    if (count(head) >= minWords && count(tail) >= minWords) return [head, tail];
+  }
+  return [sentence];
 }
 
 /**
@@ -257,14 +279,21 @@ export function sentencesOf(
     const spoken = speakable(part.text);
     if (!spoken) continue;
     said.push(spoken);
-    for (const text of splitSentences(spoken)) {
+    const pieces = splitSentences(spoken);
+    // Only the line's very first sentence is cut at a clause: after that,
+    // the next sentence is made while this one plays.
+    const chunks = sentences.length === 0 && pieces.length > 0
+      ? [...firstClause(pieces[0]!), ...pieces.slice(1)]
+      : pieces;
+    chunks.forEach((text, i) => {
       sentences.push({
         text,
         partId: part.id ?? null,
         personaId: part.personaId ?? defaults.personaId,
         voiceId: part.voiceId ?? defaults.voiceId,
+        pauseAfterMs: i === chunks.length - 1 ? Math.max(0, part.pauseAfterMs ?? 0) : 0,
       });
-    }
+    });
   }
   return { line: said.join(" "), sentences };
 }
