@@ -535,7 +535,10 @@ export function useInterviewerVoice(
     (startedAt: number, opts: { contest?: boolean } = {}) => {
       const unheard = [...open.current].filter((line) => line.stop_requested_at === null && line.ended_at === null);
       if (unheard.length === 0) return false;
-      for (const line of unheard) line.speech_started_at ??= startedAt;
+      for (const line of unheard) {
+        line.speech_started_at ??= startedAt;
+        if (opts.contest) line.contested = true;
+      }
       if (!opts.contest) {
         stop("barge_in");
         return true;
