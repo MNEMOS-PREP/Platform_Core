@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 
-import { firstClause, sentencesOf } from "../src/voice/core.ts";
+import { clauses, firstClause, sentencesOf } from "../src/voice/core.ts";
 import { deliberateMs, naturalGapMs, silenceBeforeMs } from "../src/voice/silence.ts";
 
 let passed = 0;
@@ -52,7 +52,27 @@ test("a long first sentence is cut at its first clause; a short one is not", () 
   assert.ok(head!.endsWith(","), head);
   assert.equal(`${head} ${tail}`, long);
   const { sentences } = sentencesOf(`${long} Take your time.`, { personaId: null, voiceId: null });
-  assert.equal(sentences.length, 3, "only the first sentence is cut");
+  assert.deepEqual(sentences.map((s) => s.text), [head, tail, "Take your time."]);
+});
+
+test("long sentences are cut at their clauses, so M11 makes the pieces side by side (v0.26.0)", () => {
+  const short = "Tell me about the system you built.";
+  assert.deepEqual(clauses(short), [short]);
+  const question =
+    "Can you describe, in your own words, what the automated evaluation harness you built does and what problem it was intended to solve?";
+  const pieces = clauses(question);
+  assert.equal(pieces.length, 2, pieces.join(" | "));
+  assert.equal(pieces.join(" "), question, "nothing lost or reordered");
+  for (const piece of pieces) assert.ok(piece.split(/\s+/).length >= 4, piece);
+  // Cut where the halves balance, and again while a half is still long.
+  const longer =
+    "We built it in three weeks, the team was small, the data was messy and late, and still the pipeline shipped on time with every check green.";
+  const cut = clauses(longer);
+  assert.ok(cut.length >= 3, cut.join(" | "));
+  assert.equal(cut.join(" "), longer);
+  // No clause boundary: it stays whole rather than being cut mid-phrase.
+  const plain = "Walk me through how the classifier decides which department receives each complaint it is given";
+  assert.deepEqual(clauses(plain), [plain]);
 });
 
 test("a part's pause falls after its last sentence", () => {

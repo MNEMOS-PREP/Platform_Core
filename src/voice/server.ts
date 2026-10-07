@@ -46,15 +46,17 @@ export interface SpokenSentence {
   cached: boolean;
 }
 
-/** One sentence, in the voice M11 casts for this interviewer. */
+/** One sentence, in the voice M11 casts for this interviewer. `line` is the
+ *  room's id for the line it belongs to, as given to `planOnServer`. */
 export async function speakOnServer(
   text: string,
   who: { personaId?: string | null; voiceId?: string | null },
   signal?: AbortSignal,
+  line?: string | null,
 ): Promise<SpokenSentence> {
   const { blob, headers } = await api.postBlob(
     "/v1/voice/speak",
-    { text, persona_id: who.personaId ?? null, voice_id: who.voiceId ?? null },
+    { text, persona_id: who.personaId ?? null, voice_id: who.voiceId ?? null, line: line ?? null },
     signal,
   );
   return {
@@ -62,4 +64,39 @@ export async function speakOnServer(
     voice: headers.get("X-Voice") ?? "server",
     cached: headers.get("X-Cache") === "hit",
   };
+}
+
+/** A sentence of a line to plan: its words and who says them. */
+export interface PlannedSentence {
+  text: string;
+  personaId?: string | null;
+  voiceId?: string | null;
+}
+
+/**
+ * Start M11 making a whole line now, its sentences side by side (v0.26.0):
+ * on a CPU three are made at once barely slower than one, so by the time the
+ * room asks for each sentence in order, most are made — the gap that followed
+ * every full stop, while the next sentence was made, is gone. Best-effort:
+ * if it fails, each sentence is made when asked for, as before.
+ */
+export function planOnServer(line: string, sentences: readonly PlannedSentence[]): void {
+  if (sentences.length === 0) return;
+  void api
+    .post("/v1/voice/plan", {
+      line,
+      sentences: sentences.slice(0, 24).map((s) => ({
+        text: s.text,
+        persona_id: s.personaId ?? null,
+        voice_id: s.voiceId ?? null,
+      })),
+    })
+    .catch(() => undefined);
+}
+
+/** The room stopped these lines (a barge-in, a repeat, the student's own
+ *  answer): M11 skips their sentences it has not started. */
+export function dropOnServer(lines: readonly string[]): void {
+  if (lines.length === 0) return;
+  void api.post("/v1/voice/drop", { lines: lines.slice(0, 32) }).catch(() => undefined);
 }

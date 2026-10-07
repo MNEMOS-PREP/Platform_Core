@@ -143,7 +143,7 @@ export type { Room } from "./voice/micCheck";
 // chunk, and the student's answers kept with consent.
 export { deliberateMs, naturalGapMs, silenceBeforeMs } from "./voice/silence";
 export type { SilenceInput } from "./voice/silence";
-export { firstClause } from "./voice/core";
+export { clauses, firstClause } from "./voice/core";
 export {
   forgetKeptAnswers,
   keepAnswerAudio,
@@ -157,8 +157,8 @@ export type { TurnVerdict } from "./voice/turn";
 // The latency ledger's browser half (v0.15.0): one record per spoken line.
 export { chunkOffsets, heardThrough, timingsPath } from "./voice/ledger";
 // M11's server voice (v0.16.0): is it ready, and one sentence in a cast voice.
-export { forgetServerVoiceState, serverVoiceState, speakOnServer } from "./voice/server";
-export type { ServerVoiceState, SpokenSentence } from "./voice/server";
+export { dropOnServer, forgetServerVoiceState, planOnServer, serverVoiceState, speakOnServer } from "./voice/server";
+export type { PlannedSentence, ServerVoiceState, SpokenSentence } from "./voice/server";
 export type { LineTiming, RoomMarks, StopReason } from "./voice/ledger";
 export {
   kindOf,

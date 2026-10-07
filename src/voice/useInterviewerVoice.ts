@@ -83,7 +83,14 @@ import {
   type Sentence,
   type SpokenPart,
 } from "./core";
-import { forgetServerVoiceState, serverVoiceState, speakOnServer, type SpokenSentence } from "./server";
+import {
+  dropOnServer,
+  forgetServerVoiceState,
+  planOnServer,
+  serverVoiceState,
+  speakOnServer,
+  type SpokenSentence,
+} from "./server";
 import {
   NO_MARKS,
   chunkOffsets,
@@ -250,6 +257,8 @@ export function useInterviewerVoice(
       requests.current.clear();
       chain.current = Promise.resolve();
       asking.current = Promise.resolve();
+      // M11 is making these lines' sentences ahead (v0.26.0): stop it.
+      dropOnServer([...open.current].filter((line) => line.tier === "server").map((line) => line.id));
       aside.current?.pause();
       aside.current = null;
       for (const line of [...open.current]) {
@@ -437,11 +446,21 @@ export function useInterviewerVoice(
       line.tier = "server";
       const request = new AbortController();
       requests.current.add(request);
+      // The whole line, now: M11 makes its sentences side by side (v0.26.0).
+      planOnServer(
+        line.id,
+        chunks.map((chunk) => ({ text: chunk.text, personaId: chunk.personaId, voiceId: chunk.voiceId })),
+      );
       // In speaking order, each asked for when the one before it is made.
       const clips = chunks.map((chunk) => {
         const made = asking.current.then(() => {
           if (request.signal.aborted) throw new DOMException("stopped", "AbortError");
-          return speakOnServer(chunk.text, { personaId: chunk.personaId, voiceId: chunk.voiceId }, request.signal);
+          return speakOnServer(
+            chunk.text,
+            { personaId: chunk.personaId, voiceId: chunk.voiceId },
+            request.signal,
+            line.id,
+          );
         });
         asking.current = made.then(
           () => undefined,
@@ -714,6 +733,7 @@ export function useInterviewerVoice(
         if (mounted.current) return;
         playing.current?.audio.pause();
         for (const request of requests.current) request.abort();
+        dropOnServer([...open.current].filter((line) => line.tier === "server").map((line) => line.id));
         const at = nowMs();
         for (const line of [...open.current]) {
           line.stop_requested_at ??= at;

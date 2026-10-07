@@ -263,6 +263,31 @@ export function firstClause(sentence: string, minWords = 4, longWords = 12): str
 }
 
 /**
+ * A long sentence cut at its clause boundaries (v0.26.0), each piece short
+ * enough to be made beside the others: M11 makes three at once, and a long
+ * question made whole was the last piece ready and the gap before it. Cut
+ * where the two halves balance best, never leaving a piece under `minWords`
+ * ("Thanks," alone is not a clause); a sentence with no such boundary stays.
+ */
+export function clauses(sentence: string, longWords = 12, minWords = 4): string[] {
+  const count = (text: string) => text.split(/\s+/).filter(Boolean).length;
+  const total = count(sentence);
+  if (total <= longWords) return [sentence];
+  let best: { head: string; tail: string; off: number } | null = null;
+  for (const match of sentence.matchAll(/[,;:—–] /g)) {
+    const at = (match.index ?? 0) + 1;
+    const head = sentence.slice(0, at).trim();
+    const tail = sentence.slice(at).trim();
+    const words = count(head);
+    if (words < minWords || count(tail) < minWords) continue;
+    const off = Math.abs(words - total / 2);
+    if (!best || off < best.off) best = { head, tail, off };
+  }
+  if (!best) return [sentence];
+  return [...clauses(best.head, longWords, minWords), ...clauses(best.tail, longWords, minWords)];
+}
+
+/**
  * A line as it is spoken: the text heard (every part, in order, speakable)
  * and its sentences, each carrying its speaker. A part that names nobody is
  * said by the room's own interviewer (`defaults`); a part with nothing to say
@@ -280,11 +305,16 @@ export function sentencesOf(
     if (!spoken) continue;
     said.push(spoken);
     const pieces = splitSentences(spoken);
-    // Only the line's very first sentence is cut at a clause: after that,
-    // the next sentence is made while this one plays.
-    const chunks = sentences.length === 0 && pieces.length > 0
-      ? [...firstClause(pieces[0]!), ...pieces.slice(1)]
-      : pieces;
+    // FR-11.7: the line's very first sentence is cut at its first clause, so
+    // the first audio is a few words. v0.26.0: every long sentence is cut at
+    // its clauses too, so M11 makes the pieces side by side.
+    const chunks = pieces.flatMap((piece, i) => {
+      if (sentences.length === 0 && i === 0) {
+        const [head, ...rest] = firstClause(piece);
+        return [head!, ...rest.flatMap((tail) => clauses(tail))];
+      }
+      return clauses(piece);
+    });
     chunks.forEach((text, i) => {
       sentences.push({
         text,
