@@ -122,6 +122,23 @@ function readPreference(): boolean {
   }
 }
 
+/**
+ * Have M11 make a line before it is said (v0.27.1): the panel's opening,
+ * while the student reads the plan — the first words were made only once
+ * Start was pressed, seconds after the text appeared. The same sentences the
+ * room will ask for (`sentencesOf`), so they are waiting in M11's cache.
+ * Only when the voice is on and M11's voice is ready; best-effort.
+ */
+export async function prepareLine(lineId: string, parts: readonly SpokenPart[]): Promise<void> {
+  if (!readPreference() || parts.length === 0) return;
+  if ((await serverVoiceState()) !== "ready") return;
+  const { sentences } = sentencesOf(parts, { personaId: null, voiceId: null });
+  planOnServer(
+    lineId,
+    sentences.map((s) => ({ text: s.text, personaId: s.personaId, voiceId: s.voiceId })),
+  );
+}
+
 function writePreference(on: boolean) {
   try {
     localStorage.setItem(PREFERENCE_KEY, on ? "on" : "off");

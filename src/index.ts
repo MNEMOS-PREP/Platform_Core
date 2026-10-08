@@ -102,7 +102,7 @@ export type { ModuleInfo } from "./lib/modules";
 // ── The interviewer's voice (v0.14.0) ─────────────────────────────────────
 // M11's (Voice_Engine), here because more than one module speaks: M06's
 // interview room and M11's voice check today, M14's discussion room next.
-export { VOICE_SUPPORTED, useInterviewerVoice } from "./voice/useInterviewerVoice";
+export { VOICE_SUPPORTED, prepareLine, useInterviewerVoice } from "./voice/useInterviewerVoice";
 export type { BargeInCut, InterviewerVoice, InterviewerVoiceOptions, SpokenLine } from "./voice/useInterviewerVoice";
 // A panel's line (v0.17.0): parts, each said in its own speaker's voice.
 export { cutAt, partRanges, sentencesOf } from "./voice/core";
