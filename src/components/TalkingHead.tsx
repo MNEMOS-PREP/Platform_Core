@@ -6,8 +6,15 @@
  * in the browser by myned-ai's gsplat-flame-avatar-renderer (MIT). While the
  * interviewer speaks, every frame shows the 52 ARKit blendshapes of the
  * sentence being heard, at its audio's own time (`voice.expression`) — lip
- * sync made from the voice itself, not guessed from the text. Between lines
- * the head breathes, blinks and listens on its own (the rig's idle clips).
+ * sync made from the voice itself, not guessed from the text.
+ *
+ * v0.28.0: everything else the face does is `faceDriver`'s (face.ts): all 52
+ * channels every frame, so a mouth cut off mid-word settles shut instead of
+ * staying open; blinks; a nod into stressed words; a listener's nods. The
+ * body is the rig's idle clip, looped on each head's own mixer — the
+ * renderer's speak/listen state machine keeps its state on the class, shared
+ * by every head on the page, so at a hand-over one head's cross-fade could
+ * start from another head's clip.
  *
  * The renderer (three.js and a WebGL Gaussian sorter, about 2 MB) loads only
  * when a face is shown. Until the head is ready — and for good, if WebGL is
@@ -19,7 +26,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import type { Expression } from "../voice/face";
+import { faceDriver, type Expression, type HeadPose } from "../voice/face";
 
 export interface TalkingHeadProps {
   /** M06's persona id; the head is M11's `/v1/voice/faces/{persona}.zip`. */
@@ -30,7 +37,8 @@ export interface TalkingHeadProps {
   speaking: boolean;
   /** The expression for this frame while they speak (`voice.expression`). */
   expression: () => Expression | null;
-  /** The student is talking: the head listens rather than idles. */
+  /** The student is talking to this person: the head listens (nods now and
+   *  then) rather than idles. */
   listening?: boolean;
   /** Shown until the head is ready, and instead of it if it cannot be. */
   fallback: ReactNode;
@@ -46,6 +54,10 @@ const CAMERA = { position: [0, 1.708, 0.46] as const, target: [0, 1.69, 0.04] as
 
 type Renderer = {
   dispose(): void;
+  /** The rig's clips, and one played alone on this head (the state machine
+   *  set aside). Both in the renderer since 1.4; absent, the default runs. */
+  listClips?(): { name: string; duration: number }[];
+  playClip?(name: string, loop?: boolean): number | null;
   viewer?: {
     /** The next frame the renderer's own loop asked for. */
     requestFrameId?: number;
@@ -75,15 +87,26 @@ function webglAvailable(): boolean {
   }
 }
 
-/** The tile's own background, as the renderer wants it ("0xRRGGBB"). */
+/** The first background behind `element` that can be seen, as the renderer
+ *  wants it ("0xRRGGBB"). The theme's colours are oklch, which reading the
+ *  numbers out of the CSS turned into seven hex digits — the renderer
+ *  refused every head (2026-10-08) — so a canvas does the conversion: it
+ *  takes any colour CSS does, and hands back RGB. */
 function backgroundOf(element: HTMLElement): string {
-  const match = getComputedStyle(element).backgroundColor.match(/\d+(\.\d+)?/g);
-  if (!match || match.length < 3) return "0x101114";
-  const hex = match
-    .slice(0, 3)
-    .map((v) => Math.round(Number(v)).toString(16).padStart(2, "0"))
-    .join("");
-  return `0x${hex}`;
+  const fallback = "0x101114";
+  const context = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+  if (!context) return fallback;
+  for (let at: HTMLElement | null = element; at; at = at.parentElement) {
+    context.clearRect(0, 0, 1, 1);
+    context.fillStyle = "#000000";
+    context.fillStyle = getComputedStyle(at).backgroundColor;
+    context.fillRect(0, 0, 1, 1);
+    const [r = 0, g = 0, b = 0, alpha = 0] = context.getImageData(0, 0, 1, 1).data;
+    if (alpha === 0) continue; // transparent: the colour is further out
+    const hex = [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
+    return `0x${hex}`;
+  }
+  return fallback;
 }
 
 export function TalkingHead({
@@ -139,15 +162,23 @@ export function TalkingHead({
       }
       mount.remove();
     };
+    // This head's face, frame by frame: the renderer asks for the
+    // expression, then (after its clip has moved the bones) the head pose.
+    const face = faceDriver(persona);
     setState("loading");
     loadRenderer()
       .then((GaussianSplatRenderer) =>
         GaussianSplatRenderer.create(mount, `/v1/voice/faces/${encodeURIComponent(persona)}.zip`, {
-          getChatState: () =>
-            speakingRef.current ? "Responding" : listeningRef.current ? "Listening" : "Idle",
-          getExpressionData: () => (speakingRef.current ? expressionRef.current() : null) ?? {},
+          getChatState: () => "Idle",
+          getExpressionData: () =>
+            face.frame(
+              performance.now() / 1000,
+              speakingRef.current ? expressionRef.current() : null,
+              listeningRef.current,
+            ),
+          getNeckPose: (): HeadPose | null => face.pose(),
           // The tile's colour: the holder itself is transparent.
-          backgroundColor: backgroundOf(element.parentElement ?? element),
+          backgroundColor: backgroundOf(element),
         }),
       )
       .then((made) => {
@@ -162,6 +193,10 @@ export function TalkingHead({
           made.viewer?.controls?.target.set(...CAMERA.target);
           camera.lookAt(...CAMERA.target);
         }
+        // The idle clip, looped on this head alone (see the top).
+        const clips = made.listClips?.() ?? [];
+        const idle = clips.find((clip) => /idle/i.test(clip.name)) ?? clips[0];
+        if (idle) made.playClip?.(idle.name, true);
         // `create` has started the renderer's own frame loop already.
         setState("ready");
       })
