@@ -142,7 +142,39 @@ export function DependencyTable({ statuses }: { statuses: DependencyStatus[] }) 
     return <p className="text-sm text-ink-soft">This module declares no dependencies.</p>;
   }
   return (
-    <table className="w-full border-collapse text-sm">
+    <>
+      {/* A phone: one block per dependency. Four columns at 390 px were a
+          column of single words, wider than the screen (2026-10-08). */}
+      <ul className="divide-y divide-line/60 text-sm md:hidden">
+        {statuses.map((s, i) => (
+          <li key={`${s.module_id}-${i}`} className="py-2.5">
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="font-medium text-ink">{s.module_id}</span>
+              <span className="text-ink-soft">{s.name}</span>
+              {s.available ? (
+                <span className="rounded-full border border-confirmed/30 bg-confirmed-soft px-2 py-0.5 text-xs text-confirmed">
+                  up
+                </span>
+              ) : (
+                <span className="rounded-full border border-reported/30 bg-reported-soft px-2 py-0.5 text-xs text-reported">
+                  down
+                </span>
+              )}
+              {s.required && (
+                <span className="rounded bg-contested-soft px-1 text-xs text-contested">required</span>
+              )}
+            </p>
+            <p className="mt-1 text-ink-soft">{s.reason}</p>
+            <p className="mt-1 text-xs text-ink-faint">
+              <span className="font-medium">If missing:</span> {s.on_missing}
+            </p>
+            <p className="mt-1 break-all text-xs text-ink-faint">
+              {s.detail} · {s.base_url || "no base_url"}
+            </p>
+          </li>
+        ))}
+      </ul>
+    <table className="hidden w-full border-collapse text-sm md:table">
       <thead>
         <tr className="border-b border-line text-left text-xs tracking-wide text-ink-soft uppercase">
           <th className="py-2 pr-3">Module</th>
@@ -185,5 +217,6 @@ export function DependencyTable({ statuses }: { statuses: DependencyStatus[] }) 
         ))}
       </tbody>
     </table>
+    </>
   );
 }
