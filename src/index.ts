@@ -157,7 +157,20 @@ export type { TurnVerdict } from "./voice/turn";
 // The latency ledger's browser half (v0.15.0): one record per spoken line.
 export { chunkOffsets, heardThrough, timingsPath } from "./voice/ledger";
 // M11's server voice (v0.16.0): is it ready, and one sentence in a cast voice.
-export { dropOnServer, forgetServerVoiceState, planOnServer, serverVoiceState, speakOnServer } from "./voice/server";
+export {
+  dropOnServer,
+  faceOnServer,
+  forgetServerVoiceState,
+  planOnServer,
+  serverVoiceState,
+  speakOnServer,
+} from "./voice/server";
+// v0.27.0: the interviewer's face, lip-synced to the voice's own audio.
+export { FACE_LOOKAHEAD_S, jawOnly, weightsAt } from "./voice/face";
+export type { Expression, FaceFrames } from "./voice/face";
+export { useInterviewerFaces } from "./voice/useInterviewerFaces";
+export { TalkingHead } from "./components/TalkingHead";
+export type { TalkingHeadProps } from "./components/TalkingHead";
 export type { PlannedSentence, ServerVoiceState, SpokenSentence } from "./voice/server";
 export type { LineTiming, RoomMarks, StopReason } from "./voice/ledger";
 export {

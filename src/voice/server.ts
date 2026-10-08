@@ -13,6 +13,7 @@
  */
 
 import { api } from "../lib/api";
+import type { FaceFrames } from "./face";
 
 export type ServerVoiceState = "off" | "loading" | "ready" | "failed" | "unreachable";
 
@@ -44,6 +45,8 @@ export interface SpokenSentence {
   voice: string;
   /** Made before (M11's cache), so it came back instantly. */
   cached: boolean;
+  /** Where this sentence's lip sync is (`faceOnServer`), when M11 makes one. */
+  face: string | null;
 }
 
 /** One sentence, in the voice M11 casts for this interviewer. `line` is the
@@ -63,7 +66,25 @@ export async function speakOnServer(
     url: URL.createObjectURL(blob),
     voice: headers.get("X-Voice") ?? "server",
     cached: headers.get("X-Cache") === "hit",
+    face: headers.get("X-Face"),
   };
+}
+
+const faces = new Map<string, Promise<FaceFrames | null>>();
+
+/** One sentence's lip sync (v0.27.0): 52 ARKit blendshapes at 30 fps, made by
+ *  M11 from the sentence's own audio, by the key the audio came with. Null
+ *  when M11 has none to give: the jaw then follows the words (`jawOnly`). */
+export function faceOnServer(key: string): Promise<FaceFrames | null> {
+  const hit = faces.get(key);
+  if (hit) return hit;
+  const made = api
+    .get<FaceFrames>(`/v1/voice/face/${key}`)
+    .then((frames) => (frames && Array.isArray(frames.frames) ? frames : null))
+    .catch(() => null);
+  faces.set(key, made);
+  if (faces.size > 64) faces.delete(faces.keys().next().value as string);
+  return made;
 }
 
 /** A sentence of a line to plan: its words and who says them. */

@@ -83,8 +83,10 @@ import {
   type Sentence,
   type SpokenPart,
 } from "./core";
+import { jawOnly, weightsAt, type Expression, type FaceFrames } from "./face";
 import {
   dropOnServer,
+  faceOnServer,
   forgetServerVoiceState,
   planOnServer,
   serverVoiceState,
@@ -210,8 +212,16 @@ export function useInterviewerVoice(
   const tier = useRef<Tier | null>(null);
   const [tierShown, setTierShown] = useState<Tier | null>(null);
   const [serverVoiceName, setServerVoiceName] = useState<string | null>(null);
-  /** The server line now playing, so a stop can pause it where it is. */
-  const playing = useRef<{ audio: HTMLAudioElement; url: string; line: OpenLine; start: number; length: number } | null>(null);
+  /** The server line now playing, so a stop can pause it where it is — and
+   *  the face can read its lip sync at the audio's own time (v0.27.0). */
+  const playing = useRef<{
+    audio: HTMLAudioElement;
+    url: string;
+    line: OpenLine;
+    start: number;
+    length: number;
+    face: FaceFrames | null;
+  } | null>(null);
   /** Requests for sentences not yet played, cancelled by a stop. */
   const requests = useRef(new Set<AbortController>());
   /** Server lines play one after another, never over each other. */
@@ -387,7 +397,14 @@ export function useInterviewerVoice(
     ) =>
       new Promise<void>((resolve) => {
         const audio = new Audio(clip.url);
-        playing.current = { audio, url: clip.url, line, start, length };
+        playing.current = { audio, url: clip.url, line, start, length, face: null };
+        // The sentence's lip sync, fetched when its audio arrived; it is
+        // usually here before the first frame is drawn.
+        if (clip.face) {
+          void faceOnServer(clip.face).then((frames) => {
+            if (playing.current?.audio === audio) playing.current.face = frames;
+          });
+        }
         const done = () => {
           if (playing.current?.audio === audio) {
             playing.current = null;
@@ -453,15 +470,21 @@ export function useInterviewerVoice(
       );
       // In speaking order, each asked for when the one before it is made.
       const clips = chunks.map((chunk) => {
-        const made = asking.current.then(() => {
-          if (request.signal.aborted) throw new DOMException("stopped", "AbortError");
-          return speakOnServer(
-            chunk.text,
-            { personaId: chunk.personaId, voiceId: chunk.voiceId },
-            request.signal,
-            line.id,
-          );
-        });
+        const made = asking.current
+          .then(() => {
+            if (request.signal.aborted) throw new DOMException("stopped", "AbortError");
+            return speakOnServer(
+              chunk.text,
+              { personaId: chunk.personaId, voiceId: chunk.voiceId },
+              request.signal,
+              line.id,
+            );
+          })
+          .then((clip) => {
+            // Ask for its lip sync now, while the sentences before it play.
+            if (clip.face) void faceOnServer(clip.face);
+            return clip;
+          });
         asking.current = made.then(
           () => undefined,
           () => undefined,
@@ -760,6 +783,24 @@ export function useInterviewerVoice(
     return 0.25 + 0.4 * Math.abs(Math.sin(now / 120));
   }, []);
 
+  /**
+   * The face for this frame (v0.27.0): the 52 ARKit blendshapes of the
+   * sentence being heard, at its audio's own time — M11's lip sync, made
+   * from that audio. Before its frames arrive, and in the browser's own
+   * voice, the jaw follows the words (`jawOnly`). Null when nobody speaks.
+   */
+  const expression = useCallback(
+    (now: number = performance.now()): Expression | null => {
+      const current = playing.current;
+      if (current && !current.audio.paused && !current.audio.ended) {
+        return current.face ? weightsAt(current.face, current.audio.currentTime) : jawOnly(mouth(now));
+      }
+      if (outstanding.current > 0) return jawOnly(mouth(now));
+      return null;
+    },
+    [mouth],
+  );
+
   return {
     supported: VOICE_SUPPORTED,
     enabled,
@@ -774,6 +815,7 @@ export function useInterviewerVoice(
     replay,
     mark,
     mouth,
+    expression,
     /** The student began speaking over the interviewer (v0.18.0). */
     bargeIn,
     /** A soft "mm-hm" on its own channel while the student talks (v0.23.0). */
