@@ -194,4 +194,25 @@ test("faces blink while they speak too", () => {
   assert.ok(shut > 0.9);
 });
 
+test("thinking, the head glances down and aside, and comes back to speak", () => {
+  const driver = faceDriver("professor");
+  let now = 0;
+  let frame = driver.frame(now, null, false, true);
+  for (let i = 0; i < 120; i++) frame = driver.frame((now += 1 / 60), null, false, true);
+  const [down, aside] = driver.pose()!.head;
+  assert.ok(down! > (1.5 * Math.PI) / 180 && aside! > (2 * Math.PI) / 180, `${down} ${aside}`);
+  assert.ok(frame.eyeLookDownLeft! > 0.15, "the eyes go with it");
+  for (let i = 0; i < 90; i++) frame = driver.frame((now += 1 / 60), { jawOpen: 0.2 }, false, true);
+  assert.ok(frame.eyeLookDownLeft! < 0.02, "speaking, they look back");
+  const limit = (5 * Math.PI) / 180;
+  for (const angle of driver.pose()!.head) assert.ok(Math.abs(angle) <= limit + 1e-12);
+});
+
+test("every turn of the head stays within five degrees, whatever overlaps", () => {
+  const limit = (5 * Math.PI) / 180;
+  for (let s = 0; s < 20; s += 0.1) {
+    for (const angle of headPose(s, 1, 0, 1, 1, 0.3, 1)!.head) assert.ok(Math.abs(angle) <= limit + 1e-12);
+  }
+});
+
 console.log(`\n${passed} passed`);

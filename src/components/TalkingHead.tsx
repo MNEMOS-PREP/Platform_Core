@@ -18,8 +18,9 @@
  *
  * The renderer (three.js and a WebGL Gaussian sorter, about 2 MB) loads only
  * when a face is shown. Until the head is ready — and for good, if WebGL is
- * missing or the head cannot load — the `fallback` (the drawn face) stands
- * in, so a room never waits on a face.
+ * missing or the head cannot load — the `fallback` stands in (the room passes
+ * the interviewer's photo, `InterviewerPhoto`), and the head fades in over it,
+ * so a room never waits on a face and never shows a drawn one.
  *
  * Every head is labelled as AI (spec §15.6): its portrait was generated,
  * never a real person's.
@@ -40,7 +41,11 @@ export interface TalkingHeadProps {
   /** The student is talking to this person: the head listens (nods now and
    *  then) rather than idles. */
   listening?: boolean;
-  /** Shown until the head is ready, and instead of it if it cannot be. */
+  /** This person is working out what to say (v0.29.0): the head glances
+   *  down and aside until they speak. */
+  thinking?: boolean;
+  /** Shown until the head is ready, and instead of it if it cannot be: the
+   *  interviewer's photo (`InterviewerPhoto` with `fill`). */
   fallback: ReactNode;
   className?: string;
   /** "AI" in the corner (spec §15.6). On unless the page labels it itself. */
@@ -115,6 +120,7 @@ export function TalkingHead({
   speaking,
   expression,
   listening = false,
+  thinking = false,
   fallback,
   className = "",
   label = true,
@@ -126,9 +132,11 @@ export function TalkingHead({
   // Read by the renderer every frame: refs, so no re-render per frame.
   const speakingRef = useRef(speaking);
   const listeningRef = useRef(listening);
+  const thinkingRef = useRef(thinking);
   const expressionRef = useRef(expression);
   speakingRef.current = speaking;
   listeningRef.current = listening;
+  thinkingRef.current = thinking;
   expressionRef.current = expression;
 
   useEffect(() => {
@@ -175,6 +183,7 @@ export function TalkingHead({
               performance.now() / 1000,
               speakingRef.current ? expressionRef.current() : null,
               listeningRef.current,
+              thinkingRef.current,
             ),
           getNeckPose: (): HeadPose | null => face.pose(),
           // The tile's colour: the holder itself is transparent.
@@ -215,8 +224,18 @@ export function TalkingHead({
       role="img"
       aria-label={`${name}, an AI-generated interviewer${speaking ? ", speaking" : ""}`}
     >
-      <div ref={holder} className={`absolute inset-0 ${state === "ready" ? "" : "opacity-0"}`} />
-      {state !== "ready" && <div className="absolute inset-0 grid place-items-center">{fallback}</div>}
+      {/* The photo under the head: the head fades in over it (0.6 s), so the
+          person is there from the first frame and only comes to life. */}
+      <div
+        className={`absolute inset-0 transition-opacity duration-500 ${state === "ready" ? "opacity-0" : "opacity-100"}`}
+        aria-hidden={state === "ready"}
+      >
+        {fallback}
+      </div>
+      <div
+        ref={holder}
+        className={`absolute inset-0 transition-opacity duration-[600ms] ${state === "ready" ? "opacity-100" : "opacity-0"}`}
+      />
       {label && state === "ready" && (
         <span
           className="absolute top-1.5 right-1.5 rounded bg-black/55 px-1.5 py-px text-[0.625rem] font-semibold tracking-wide text-white"

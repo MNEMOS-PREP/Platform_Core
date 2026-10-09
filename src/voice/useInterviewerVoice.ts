@@ -68,6 +68,18 @@
  * (FR-11.12). `backchannel(text, who)` says a soft "mm-hm" on a separate
  * channel while the student talks (FR-11.11): not a line, not on the ledger,
  * never queued behind the interviewer, and only with M11's voice.
+ *
+ * ── The track (v0.29.0) ─────────────────────────────────────────────────────
+ * The user, after a mock: "gaps in speech, awkward pauses, sometimes if the
+ * text is too long". Every server sentence was its own `<audio>`, started when
+ * the one before it ended — a decode and a start at every join, on top of the
+ * silence each clip carries. Now they are one track (`player.ts`): each clip
+ * trimmed to its sound and scheduled on one clock, after the pause a person
+ * leaves there (`track.ts`: ~0.3 s at a full stop, ~0.1 s at a comma, ~0.22 s
+ * when the speaker changes), the next line straight after the last. A long
+ * line whose rest M11 is still making holds its first word a moment instead
+ * of stalling mid-sentence (`holdFor`, from how fast this machine has been
+ * making speech). The face reads the track's own clock.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -84,6 +96,8 @@ import {
   type SpokenPart,
 } from "./core";
 import { jawOnly, weightsAt, type Expression, type FaceFrames } from "./face";
+import { SpeechPlayer, type Scheduled } from "./player";
+import { Rate, holdFor, pauseBetween, trimBounds } from "./track";
 import {
   dropOnServer,
   faceOnServer,
@@ -91,6 +105,7 @@ import {
   planOnServer,
   serverVoiceState,
   speakOnServer,
+  type PlanPriority,
   type SpokenSentence,
 } from "./server";
 import {
@@ -128,14 +143,24 @@ function readPreference(): boolean {
  * Start was pressed, seconds after the text appeared. The same sentences the
  * room will ask for (`sentencesOf`), so they are waiting in M11's cache.
  * Only when the voice is on and M11's voice is ready; best-effort.
+ *
+ * v0.29.0: `priority` `"next"` or `"warm"` for a line the room only expects
+ * to say — the next question while the student answers, or a stock phrase.
+ * M11 makes it only while nothing is being said, and a line being said is
+ * never kept waiting by it.
  */
-export async function prepareLine(lineId: string, parts: readonly SpokenPart[]): Promise<void> {
+export async function prepareLine(
+  lineId: string,
+  parts: readonly SpokenPart[],
+  priority: PlanPriority = "live",
+): Promise<void> {
   if (!readPreference() || parts.length === 0) return;
   if ((await serverVoiceState()) !== "ready") return;
   const { sentences } = sentencesOf(parts, { personaId: null, voiceId: null });
-  planOnServer(
+  await planOnServer(
     lineId,
     sentences.map((s) => ({ text: s.text, personaId: s.personaId, voiceId: s.voiceId })),
+    priority,
   );
 }
 
@@ -184,6 +209,26 @@ const STOP_UNREPORTED_AFTER_MS = 1_000;
 
 type OpenLine = LineTiming & { timer: number | null; parts: PartRange[] };
 
+/** A server line's clip on the track: where it sits in its line. */
+interface ClipMeta {
+  line: OpenLine;
+  /** Characters of the line before it, and its own. */
+  start: number;
+  length: number;
+  partId: string | null;
+  key: string;
+  gen: number;
+  /** Its lip sync, once fetched. */
+  face: FaceFrames | null;
+  last: boolean;
+}
+
+/** Characters a second a voice speaks before it has been heard here. */
+const PACE = 14;
+/** Seconds of speech M11 makes a second, before this page has measured it:
+ *  a laptop CPU's (research/listening/threads.md). */
+const MAKING = 1.1;
+
 /** Where a student came in over a line (FR-11.9), for the room to record. */
 export interface BargeInCut {
   /** The room's key for the line: its last turn id. */
@@ -229,16 +274,15 @@ export function useInterviewerVoice(
   const tier = useRef<Tier | null>(null);
   const [tierShown, setTierShown] = useState<Tier | null>(null);
   const [serverVoiceName, setServerVoiceName] = useState<string | null>(null);
-  /** The server line now playing, so a stop can pause it where it is — and
-   *  the face can read its lip sync at the audio's own time (v0.27.0). */
-  const playing = useRef<{
-    audio: HTMLAudioElement;
-    url: string;
-    line: OpenLine;
-    start: number;
-    length: number;
-    face: FaceFrames | null;
-  } | null>(null);
+  /** The server voice's track (v0.29.0): every clip of every line on one
+   *  clock — what a stop silences, and what the face reads its time from. */
+  const player = useRef<SpeechPlayer<ClipMeta> | null>(null);
+  const track = useCallback(() => (player.current ??= new SpeechPlayer<ClipMeta>()), []);
+  /** The last piece put on the track: the pause before the next line. */
+  const lastPiece = useRef<{ text: string; personaId: string | null; manner: string | undefined } | null>(null);
+  /** How fast M11 makes speech here, and each voice speaks: `holdFor`'s guesses. */
+  const making = useRef(new Rate(MAKING));
+  const pace = useRef(new Map<string, Rate>());
   /** Requests for sentences not yet played, cancelled by a stop. */
   const requests = useRef(new Set<AbortController>());
   /** Server lines play one after another, never over each other. */
@@ -271,15 +315,14 @@ export function useInterviewerVoice(
   const stop = useCallback(
     (reason: StopReason = "end") => {
       const at = nowMs();
-      const now = playing.current;
-      playing.current = null;
-      if (now) {
-        // Heard as far as the audio got through its sentence.
-        const fraction = now.audio.duration ? Math.min(1, now.audio.currentTime / now.audio.duration) : 0;
-        now.line.heard_chars = now.start + Math.round(now.length * fraction);
-        now.audio.pause();
-        URL.revokeObjectURL(now.url);
+      const heard = player.current?.current();
+      if (heard) {
+        // Heard as far as the track got through its sentence.
+        const meta = heard.clip.meta;
+        meta.line.heard_chars = meta.start + Math.round(meta.length * player.current!.heard(heard.clip));
       }
+      player.current?.stop();
+      lastPiece.current = null;
       for (const request of requests.current) request.abort();
       requests.current.clear();
       chain.current = Promise.resolve();
@@ -298,7 +341,7 @@ export function useInterviewerVoice(
           line.stopped_at = at;
           close(line);
         } else if (line.tier === "server") {
-          // A paused <audio> is silent at once; there is no event to wait for.
+          // The track fades out in 25 ms; there is no event to wait for.
           line.stopped_at = nowMs();
           close(line);
         } else if (line.timer === null) {
@@ -400,88 +443,54 @@ export function useInterviewerVoice(
     [close],
   );
 
-  /** One server sentence, played to its end (or until a stop pauses it). */
-  const playClip = useCallback(
-    (
-      clip: SpokenSentence,
-      line: OpenLine,
-      start: number,
-      length: number,
-      last: boolean,
-      gen: number,
-      key: string,
-      partId: string | null,
-    ) =>
-      new Promise<void>((resolve) => {
-        const audio = new Audio(clip.url);
-        playing.current = { audio, url: clip.url, line, start, length, face: null };
-        // The sentence's lip sync, fetched when its audio arrived; it is
-        // usually here before the first frame is drawn.
-        if (clip.face) {
-          void faceOnServer(clip.face).then((frames) => {
-            if (playing.current?.audio === audio) playing.current.face = frames;
-          });
-        }
-        const done = () => {
-          if (playing.current?.audio === audio) {
-            playing.current = null;
-            URL.revokeObjectURL(clip.url);
-          }
-          resolve();
-        };
-        audio.onplaying = () => {
-          if (line.first_audio_at === null && line.stop_requested_at === null) {
-            line.first_audio_at = nowMs();
-            if (line.timer !== null) window.clearTimeout(line.timer);
-            line.timer = null;
-          }
-          if (gen !== generation.current) return;
-          activity.current = { wordAt: 0, reportsWords: false };
-          setBlocked(false);
-          setSpeakingKey(key);
-          setSpeakingPart(partId);
-        };
-        audio.onended = () => {
-          line.heard_chars = start + length;
-          if (last && line.stop_requested_at === null) {
-            line.ended_at = nowMs();
-            line.heard_chars = line.line_chars;
-            close(line);
-            if (gen === generation.current) {
-              setSpeakingKey(null);
-              setSpeakingPart(null);
-            }
-          }
-          done();
-        };
-        audio.onerror = () => {
-          line.error = "audio: could not play";
-          close(line);
-          done();
-        };
-        audio.play().catch((err: unknown) => {
-          if (err instanceof DOMException && err.name === "NotAllowedError") {
-            line.blocked = true;
-            if (gen === generation.current) setBlocked(true);
-          } else if (!(err instanceof DOMException && err.name === "AbortError")) {
-            line.error = "audio: could not play";
-          }
-          close(line);
-          done();
-        });
-      }),
+  /** A clip on the track began to sound: the line's first audio, and whose
+   *  face is speaking. */
+  const started = useCallback((clip: Scheduled<ClipMeta>) => {
+    if (clip.over) return;
+    const { line, gen, key, partId } = clip.meta;
+    if (line.first_audio_at === null && line.stop_requested_at === null) {
+      line.first_audio_at = nowMs();
+      if (line.timer !== null) window.clearTimeout(line.timer);
+      line.timer = null;
+    }
+    if (gen !== generation.current) return;
+    activity.current = { wordAt: 0, reportsWords: false };
+    setBlocked(false);
+    setSpeakingKey(key);
+    setSpeakingPart(partId);
+  }, []);
+
+  /** A clip finished. The line's last: the line is heard; and when nothing
+   *  else is on the track, nobody is speaking. */
+  const ended = useCallback(
+    (clip: Scheduled<ClipMeta>) => {
+      const { line, gen, start, length, last } = clip.meta;
+      line.heard_chars = start + length;
+      if (last && line.stop_requested_at === null) {
+        line.ended_at = nowMs();
+        line.heard_chars = line.line_chars;
+        close(line);
+      }
+      if (gen === generation.current && !(player.current?.busy() ?? false)) {
+        setSpeakingKey(null);
+        setSpeakingPart(null);
+      }
+    },
     [close],
   );
 
   /** A line in M11's voice: every sentence asked for now, each in the voice
-   *  cast for its speaker, played in order. */
+   *  cast for its speaker, and each put on the track as it arrives (v0.29.0)
+   *  — trimmed to its sound, after the pause a person would leave there. */
   const playOnServer = useCallback(
     (line: OpenLine, chunks: Ready[], offsets: number[], gen: number, key: string, notBefore: number) => {
       line.tier = "server";
       const request = new AbortController();
       requests.current.add(request);
-      // The whole line, now: M11 makes its sentences side by side (v0.26.0).
-      planOnServer(
+      const asked = nowMs();
+      // The whole line, now: M11 makes its sentences side by side (v0.26.0),
+      // and says which it has already made (a pre-made line is instant).
+      const made = planOnServer(
         line.id,
         chunks.map((chunk) => ({ text: chunk.text, personaId: chunk.personaId, voiceId: chunk.voiceId })),
       );
@@ -510,6 +519,9 @@ export function useInterviewerVoice(
       });
       for (const clip of clips) clip.catch(() => undefined);
       chain.current = chain.current.then(async () => {
+        const p = track();
+        let newSeconds = 0; // speech M11 had to make for this line
+        let lastNewAt = 0;
         for (let i = 0; i < chunks.length; i++) {
           if (gen !== generation.current) return;
           let clip: SpokenSentence;
@@ -527,32 +539,91 @@ export function useInterviewerVoice(
             playInBrowser(line, chunks.slice(i), offsets.slice(i), gen, key);
             return;
           }
-          if (gen !== generation.current) {
-            URL.revokeObjectURL(clip.url);
+          URL.revokeObjectURL(clip.url);
+          if (gen !== generation.current) return;
+          let buffer: AudioBuffer;
+          try {
+            if (i === 0 && !(await p.running())) {
+              // A page not yet clicked may not play sound: the room offers
+              // its "click to hear", and the click starts the track.
+              line.blocked = true;
+              if (gen === generation.current) setBlocked(true);
+              close(line);
+              return;
+            }
+            buffer = await p.decode(await clip.blob.arrayBuffer());
+          } catch {
+            line.error = "audio: could not play";
+            close(line);
             return;
           }
+          if (gen !== generation.current) return;
+          const chunk = chunks[i]!;
+          const bounds = trimBounds(buffer.getChannelData(0), buffer.sampleRate);
+          const seconds = bounds.end - bounds.start;
+          let voicePace = pace.current.get(clip.voice);
+          if (!voicePace) pace.current.set(clip.voice, (voicePace = new Rate(PACE)));
+          voicePace.update(chunk.text.length / Math.max(0.3, seconds));
+          if (!clip.cached) {
+            newSeconds += buffer.duration;
+            lastNewAt = nowMs();
+          }
+          const manner = parseVoiceId(chunk.voiceId).manner;
+          let earliest = 0;
+          let gap: number;
           if (i === 0) {
             line.voice_name = clip.voice;
             setServerVoiceName(clip.voice);
-            // FR-11.10: never sooner than a person would answer.
-            const wait = notBefore - nowMs();
-            if (wait > 0) await new Promise((r) => window.setTimeout(r, wait));
-            if (gen !== generation.current) {
-              URL.revokeObjectURL(clip.url);
-              return;
-            }
+            // FR-11.10: never sooner than a person would answer. And when the
+            // rest of a long line is still being made, its first word waits
+            // a moment rather than the line stalling mid-sentence.
+            const ready = await made;
+            const rest = chunks.slice(1).map((c, j) => ({
+              seconds: ready?.[j + 1] ? 0 : c.text.length / voicePace!.get(),
+              pauseAfter: pauseBetween(c.text, { manner }),
+            }));
+            const hold = holdFor([{ seconds, pauseAfter: pauseBetween(chunk.text, { manner }) }, ...rest], making.current.get());
+            earliest = p.inMs(Math.max(notBefore - nowMs(), hold * 1000));
+            const before = lastPiece.current;
+            gap = before
+              ? pauseBetween(before.text, { sameSpeaker: before.personaId === chunk.personaId, manner: before.manner })
+              : 0;
+          } else {
+            const prev = chunks[i - 1]!;
+            gap = pauseBetween(prev.text, {
+              sameSpeaker: prev.personaId === chunk.personaId,
+              manner: parseVoiceId(prev.voiceId).manner,
+              // FR-11.12: a note-taking pause inside the line.
+              pauseAfterMs: prev.pauseAfterMs,
+            });
           }
-          const chunk = chunks[i]!;
-          await playClip(clip, line, offsets[i] ?? 0, chunk.text.length, i === chunks.length - 1, gen, key, chunk.partId);
-          if (chunk.pauseAfterMs > 0 && i < chunks.length - 1 && gen === generation.current) {
-            // FR-11.12: a note-taking pause inside the line.
-            await new Promise((r) => window.setTimeout(r, chunk.pauseAfterMs));
+          const meta: ClipMeta = {
+            line,
+            start: offsets[i] ?? 0,
+            length: chunk.text.length,
+            partId: chunk.partId,
+            key,
+            gen,
+            face: null,
+            last: i === chunks.length - 1,
+          };
+          if (clip.face) {
+            void faceOnServer(clip.face).then((frames) => {
+              meta.face = frames;
+            });
           }
+          const scheduled: Scheduled<ClipMeta> = p.schedule(buffer, bounds, gap, meta, {
+            earliest,
+            onEnded: () => ended(scheduled),
+          });
+          lastPiece.current = { text: chunk.text, personaId: chunk.personaId, manner };
+          window.setTimeout(() => started(scheduled), p.msUntil(scheduled.startAt));
         }
+        if (newSeconds > 0 && lastNewAt > asked) making.current.update(newSeconds / ((lastNewAt - asked) / 1000));
         requests.current.delete(request);
       });
     },
-    [playClip, playInBrowser],
+    [close, ended, playInBrowser, started, track],
   );
 
   const enqueue = useCallback(
@@ -634,7 +705,7 @@ export function useInterviewerVoice(
   /** Whether the interviewer can be heard right now — the listener raises
    *  its bar while they can (Trap 5). Cheap enough to read every frame. */
   const isSpeaking = useCallback(
-    () => playing.current !== null || aside.current !== null || (synth?.speaking ?? false),
+    () => (player.current?.busy() ?? false) || aside.current !== null || (synth?.speaking ?? false),
     [],
   );
 
@@ -647,11 +718,11 @@ export function useInterviewerVoice(
    */
   const backchannel = useCallback(
     (text: string, who: { personaId?: string | null; voiceId?: string | null }) => {
-      if (!enabled || tier.current !== "server" || aside.current || playing.current) return;
+      if (!enabled || tier.current !== "server" || aside.current || player.current?.busy()) return;
       const asked = nowMs();
       void speakOnServer(text, who)
         .then((clip) => {
-          if (nowMs() - asked > 900 || aside.current || playing.current) {
+          if (nowMs() - asked > 900 || aside.current || player.current?.busy()) {
             URL.revokeObjectURL(clip.url);
             return;
           }
@@ -771,7 +842,7 @@ export function useInterviewerVoice(
       mounted.current = false;
       window.setTimeout(() => {
         if (mounted.current) return;
-        playing.current?.audio.pause();
+        player.current?.stop();
         for (const request of requests.current) request.abort();
         dropOnServer([...open.current].filter((line) => line.tier === "server").map((line) => line.id));
         const at = nowMs();
@@ -808,9 +879,10 @@ export function useInterviewerVoice(
    */
   const expression = useCallback(
     (now: number = performance.now()): Expression | null => {
-      const current = playing.current;
-      if (current && !current.audio.paused && !current.audio.ended) {
-        return current.face ? weightsAt(current.face, current.audio.currentTime) : jawOnly(mouth(now));
+      const heard = player.current?.current();
+      if (heard) {
+        const face = heard.clip.meta.face;
+        return face ? weightsAt(face, heard.position) : jawOnly(mouth(now));
       }
       if (outstanding.current > 0) return jawOnly(mouth(now));
       return null;

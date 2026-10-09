@@ -41,6 +41,8 @@ export function forgetServerVoiceState(): void {
 export interface SpokenSentence {
   /** An object URL for the audio; revoke it when played. */
   url: string;
+  /** The audio itself — what the track decodes (v0.29.0). */
+  blob: Blob;
   /** M11's key for the voice that spoke (`indictts-123823`). */
   voice: string;
   /** Made before (M11's cache), so it came back instantly. */
@@ -64,6 +66,7 @@ export async function speakOnServer(
   );
   return {
     url: URL.createObjectURL(blob),
+    blob,
     voice: headers.get("X-Voice") ?? "server",
     cached: headers.get("X-Cache") === "hit",
     face: headers.get("X-Face"),
@@ -100,19 +103,33 @@ export interface PlannedSentence {
  * room asks for each sentence in order, most are made — the gap that followed
  * every full stop, while the next sentence was made, is gone. Best-effort:
  * if it fails, each sentence is made when asked for, as before.
+ *
+ * v0.29.0: resolves to which sentences M11 had made already (a pre-made line
+ * is instant, so nothing need wait for it), or null when it cannot say.
+ * A line the room only expects to say is made while nothing is being said,
+ * never ahead of a line being said: `"next"` (the likely next line — the next
+ * question, while the student answers) before `"warm"` (a stock phrase).
  */
-export function planOnServer(line: string, sentences: readonly PlannedSentence[]): void {
-  if (sentences.length === 0) return;
-  void api
-    .post("/v1/voice/plan", {
+export type PlanPriority = "live" | "next" | "warm";
+
+export function planOnServer(
+  line: string,
+  sentences: readonly PlannedSentence[],
+  priority: PlanPriority = "live",
+): Promise<boolean[] | null> {
+  if (sentences.length === 0) return Promise.resolve([]);
+  return api
+    .post<{ planned?: number; ready?: boolean[] }>("/v1/voice/plan", {
       line,
+      priority,
       sentences: sentences.slice(0, 24).map((s) => ({
         text: s.text,
         persona_id: s.personaId ?? null,
         voice_id: s.voiceId ?? null,
       })),
     })
-    .catch(() => undefined);
+    .then((body) => (Array.isArray(body?.ready) ? body.ready : null))
+    .catch(() => null);
 }
 
 /** The room stopped these lines (a barge-in, a repeat, the student's own

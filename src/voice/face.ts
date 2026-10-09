@@ -22,6 +22,11 @@
  * faces blink (the rig's clips move bones only — nothing ever closed an
  * eye), nod into stressed words while they speak, and nod now and then
  * while they listen.
+ *
+ * v0.29.0: and think. Between the student's answer and the interviewer's
+ * first word there is always a pause (the reply being worked out and
+ * spoken); a face that holds still through it reads as frozen. A person
+ * glances down and aside while they think, and back when they speak.
  */
 export interface FaceFrames {
   fps: number;
@@ -180,17 +185,23 @@ export function headPose(
   speaking: number,
   listening: number,
   phase: number,
+  thinking = 0,
 ): HeadPose | null {
-  if (speaking < 0.001 && listening < 0.001) return null;
+  if (speaking < 0.001 && listening < 0.001 && thinking < 0.001) return null;
   const wave = (hz: number, shift: number) => Math.sin(2 * Math.PI * hz * seconds + phase + shift);
   const stress = Math.min(1, Math.max(0, open - usual) * 6);
   const cycle = ((seconds + phase) % 5.5) / 5.5;
   const nod = cycle < 0.13 ? Math.sin((Math.PI * cycle) / 0.13) : 0;
+  // Thinking: the chin a little down and the head a little aside, drifting.
+  const drift = 0.4 * wave(0.11, 2.3);
+  // Never past 5 degrees, however the motions overlap (thinking easing out
+  // as speaking eases in): a seated person's head moves that little.
+  const limit = (deg: number) => DEGREE * Math.max(-5, Math.min(5, deg));
   return {
     head: [
-      DEGREE * (speaking * (1.0 * wave(0.21, 0) + 2.2 * stress) + listening * 2.0 * nod),
-      DEGREE * speaking * 1.6 * wave(0.13, 1.7),
-      DEGREE * (speaking * 0.8 * wave(0.17, 0.6) + listening * 1.5),
+      limit(speaking * (1.0 * wave(0.21, 0) + 2.2 * stress) + listening * 2.0 * nod + thinking * (2.2 + drift)),
+      limit(speaking * 1.6 * wave(0.13, 1.7) + thinking * (2.8 + drift)),
+      limit(speaking * 0.8 * wave(0.17, 0.6) + listening * 1.5 + thinking * 0.8),
     ],
   };
 }
@@ -216,9 +227,10 @@ export function faceDriver(seed: string) {
   let usual = 0;
   let speaking = 0;
   let listening = 0;
+  let thinking = 0;
   let pose: HeadPose | null = null;
   return {
-    frame(now: number, speech: Expression | null, isListening: boolean): Expression {
+    frame(now: number, speech: Expression | null, isListening: boolean, isThinking = false): Expression {
       began ??= now;
       const seconds = now - began;
       const dt = Math.min(0.25, Math.max(0, seconds - last));
@@ -230,12 +242,19 @@ export function faceDriver(seed: string) {
       usual = toward(usual, open, dt, 0.4);
       speaking = toward(speaking, speech ? 1 : 0, dt, speech ? 0.35 : 0.6);
       listening = toward(listening, isListening && !speech ? 1 : 0, dt, 0.5);
-      pose = headPose(seconds, open, usual, speaking, listening, phase);
+      thinking = toward(thinking, isThinking && !speech ? 1 : 0, dt, isThinking && !speech ? 0.6 : 0.3);
+      pose = headPose(seconds, open, usual, speaking, listening, phase, thinking);
       const lids = blink(seconds);
+      // The eyes go with the head while thinking: down, and to one side.
+      const look = thinking * 0.22;
       return {
         ...face,
         eyeBlinkLeft: Math.max(face.eyeBlinkLeft ?? 0, lids),
         eyeBlinkRight: Math.max(face.eyeBlinkRight ?? 0, lids),
+        eyeLookDownLeft: Math.max(face.eyeLookDownLeft ?? 0, look),
+        eyeLookDownRight: Math.max(face.eyeLookDownRight ?? 0, look),
+        eyeLookOutLeft: Math.max(face.eyeLookOutLeft ?? 0, look * 0.6),
+        eyeLookInRight: Math.max(face.eyeLookInRight ?? 0, look * 0.6),
       };
     },
     pose: (): HeadPose | null => pose,

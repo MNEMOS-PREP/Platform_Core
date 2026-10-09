@@ -171,7 +171,10 @@ export type { Expression, FaceFrames } from "./voice/face";
 export { useInterviewerFaces } from "./voice/useInterviewerFaces";
 export { TalkingHead } from "./components/TalkingHead";
 export type { TalkingHeadProps } from "./components/TalkingHead";
-export type { PlannedSentence, ServerVoiceState, SpokenSentence } from "./voice/server";
+// v0.29.0: every interviewer's picture is their own photo, never a drawn face.
+export { InterviewerPhoto, initialsOf, photoUrl } from "./components/InterviewerPhoto";
+export type { InterviewerPhotoProps } from "./components/InterviewerPhoto";
+export type { PlanPriority, PlannedSentence, ServerVoiceState, SpokenSentence } from "./voice/server";
 export type { LineTiming, RoomMarks, StopReason } from "./voice/ledger";
 export {
   kindOf,
