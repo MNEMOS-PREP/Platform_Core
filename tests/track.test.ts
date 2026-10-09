@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 
-import { MAX_HOLD_S, Rate, holdFor, pauseBetween, trimBounds } from "../src/voice/track.ts";
+import { MAX_HOLD_S, Rate, endsSentence, holdFor, pauseBetween, sentenceEnd, trimBounds } from "../src/voice/track.ts";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -97,6 +97,22 @@ test("never more than a person's thinking pause", () => {
   const long = Array.from({ length: 8 }, () => ({ seconds: 3, pauseAfter: 0.3 }));
   assert.equal(holdFor(long, 0.5), MAX_HOLD_S);
   assert.equal(holdFor(long, 0), 0, "no rate known: no hold");
+});
+
+test("a sentence ends at its full stop, or where the speaker changes", () => {
+  assert.ok(endsSentence("Is that right?") && endsSentence('He said "go."') && !endsSentence("Walk me through it,"));
+  const pieces = [
+    { text: "Thanks for making the time.", personaId: "a" },
+    { text: "I'm joined by Ritu,", personaId: "a" },
+    { text: "and we'll keep this conversational.", personaId: "a" },
+    { text: "Hi, I'll be sitting in", personaId: "b" },
+    { text: "and I might jump in.", personaId: "b" },
+  ];
+  assert.equal(sentenceEnd(pieces, 0), 0);
+  assert.equal(sentenceEnd(pieces, 1), 2, "a comma cut is the same sentence");
+  assert.equal(sentenceEnd(pieces, 3), 4);
+  // Another speaker ends the span even without a full stop.
+  assert.equal(sentenceEnd([{ text: "Over to you,", personaId: "a" }, { text: "Thanks.", personaId: "b" }], 0), 0);
 });
 
 test("a rate learns from what it sees, and ignores nonsense", () => {

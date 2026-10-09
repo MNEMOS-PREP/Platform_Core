@@ -97,7 +97,7 @@ import {
 } from "./core";
 import { jawOnly, weightsAt, type Expression, type FaceFrames } from "./face";
 import { SpeechPlayer, type Scheduled } from "./player";
-import { Rate, holdFor, pauseBetween, trimBounds } from "./track";
+import { Rate, endsSentence, holdFor, pauseBetween, sentenceEnd, trimBounds } from "./track";
 import {
   dropOnServer,
   faceOnServer,
@@ -494,8 +494,11 @@ export function useInterviewerVoice(
         line.id,
         chunks.map((chunk) => ({ text: chunk.text, personaId: chunk.personaId, voiceId: chunk.voiceId })),
       );
+      // Which pieces M11 has handed over: a sentence's first word waits for
+      // the rest of it by these (2026-10-10).
+      const arrived = chunks.map(() => false);
       // In speaking order, each asked for when the one before it is made.
-      const clips = chunks.map((chunk) => {
+      const clips = chunks.map((chunk, n) => {
         const made = asking.current
           .then(() => {
             if (request.signal.aborted) throw new DOMException("stopped", "AbortError");
@@ -507,6 +510,7 @@ export function useInterviewerVoice(
             );
           })
           .then((clip) => {
+            arrived[n] = true;
             // Ask for its lip sync now, while the sentences before it play.
             if (clip.face) void faceOnServer(clip.face);
             return clip;
@@ -579,7 +583,7 @@ export function useInterviewerVoice(
             // a moment rather than the line stalling mid-sentence.
             const ready = await made;
             const rest = chunks.slice(1).map((c, j) => ({
-              seconds: ready?.[j + 1] ? 0 : c.text.length / voicePace!.get(),
+              seconds: ready?.[j + 1] || arrived[j + 1] ? 0 : c.text.length / voicePace!.get(),
               pauseAfter: pauseBetween(c.text, { manner }),
             }));
             const hold = holdFor([{ seconds, pauseAfter: pauseBetween(chunk.text, { manner }) }, ...rest], making.current.get());
@@ -596,6 +600,21 @@ export function useInterviewerVoice(
               // FR-11.12: a note-taking pause inside the line.
               pauseAfterMs: prev.pauseAfterMs,
             });
+            // A new sentence (or speaker) whose later pieces are still being
+            // made waits here, before its first word, rather than stopping
+            // halfway through (2026-10-10): a pause between sentences is a
+            // person's; one inside a sentence is a machine's.
+            const end = sentenceEnd(chunks, i);
+            if ((endsSentence(prev.text) || prev.personaId !== chunk.personaId) && end > i) {
+              const pieces = [
+                { seconds, pauseAfter: pauseBetween(chunk.text, { manner }) },
+                ...chunks.slice(i + 1, end + 1).map((c, j) => ({
+                  seconds: arrived[i + 1 + j] ? 0 : c.text.length / voicePace.get(),
+                  pauseAfter: pauseBetween(c.text, { manner }),
+                })),
+              ];
+              earliest = p.inMs(holdFor(pieces, making.current.get()) * 1000);
+            }
           }
           const meta: ClipMeta = {
             line,

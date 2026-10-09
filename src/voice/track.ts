@@ -125,6 +125,33 @@ export function holdFor(pieces: readonly Planned[], rate: number, maxHold = MAX_
   return Math.min(maxHold, Math.max(0, hold));
 }
 
+/** A full stop, question mark or exclamation ends it (before any closing quote). */
+export function endsSentence(text: string): boolean {
+  return /[.!?]["')\]]*$/.test(text.trim());
+}
+
+/**
+ * Where the sentence starting at `from` ends (inclusive): the first piece
+ * closing a sentence, or the last before another speaker (2026-10-10). A
+ * piece late to be made is waited for at the start of its sentence, where a
+ * person may pause anyway, and never between two halves of one sentence —
+ * the room holds a sentence's first word as it holds a line's (`holdFor`).
+ */
+export function sentenceEnd(
+  pieces: readonly { text: string; personaId?: string | null }[],
+  from: number,
+): number {
+  let end = from;
+  while (
+    end < pieces.length - 1 &&
+    !endsSentence(pieces[end]!.text) &&
+    (pieces[end + 1]!.personaId ?? null) === (pieces[from]!.personaId ?? null)
+  ) {
+    end++;
+  }
+  return end;
+}
+
 /**
  * A running estimate (exponentially weighted): how fast M11 makes speech,
  * and how fast each voice speaks — learned from the pieces a room receives,
