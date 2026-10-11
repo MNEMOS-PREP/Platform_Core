@@ -106,6 +106,7 @@ import {
   serverVoiceState,
   speakOnServer,
   type PlanPriority,
+  type ServerVoiceState,
   type SpokenSentence,
 } from "./server";
 import {
@@ -155,13 +156,59 @@ export async function prepareLine(
   priority: PlanPriority = "live",
 ): Promise<void> {
   if (!readPreference() || parts.length === 0) return;
-  if ((await serverVoiceState()) !== "ready") return;
+  // M11 loads its voice for 20 s to a few minutes after it starts. The plan
+  // page asks once; giving up on "loading" meant nothing was made ahead in a
+  // mock begun soon after launch (2026-10-11). So it waits, a while.
+  if ((await serverVoiceStateWhenLoaded(PREPARE_WAIT_MS)) !== "ready") return;
   const { sentences } = sentencesOf(parts, { personaId: null, voiceId: null });
   await planOnServer(
     lineId,
     sentences.map((s) => ({ text: s.text, personaId: s.personaId, voiceId: s.voiceId })),
     priority,
   );
+}
+
+/**
+ * Several lines made ahead, a piece of each in turn (2026-10-11): the
+ * questions the room may ask next, any one of which will be. Made line by
+ * line, the first candidate was finished while the others had not started,
+ * and when an alternative was asked its second piece kept the student
+ * waiting 4–6 s. In turns, whichever is asked has its first piece ready, and
+ * the rest are made (promoted to live) while that one is heard.
+ */
+export async function prepareLines(
+  lines: readonly { id: string; parts: readonly SpokenPart[] }[],
+  priority: PlanPriority = "next",
+): Promise<void> {
+  if (!readPreference() || lines.length === 0) return;
+  if ((await serverVoiceStateWhenLoaded(PREPARE_WAIT_MS)) !== "ready") return;
+  const cut = lines.map((line) => ({
+    id: line.id,
+    sentences: sentencesOf(line.parts, { personaId: null, voiceId: null }).sentences,
+  }));
+  const longest = Math.max(...cut.map((line) => line.sentences.length));
+  for (let k = 0; k < longest; k++) {
+    for (const line of cut) {
+      const s = line.sentences[k];
+      if (s) await planOnServer(line.id, [{ text: s.text, personaId: s.personaId, voiceId: s.voiceId }], priority);
+    }
+  }
+}
+
+/** How long making a line ahead waits for M11 to finish loading. */
+const PREPARE_WAIT_MS = 180_000;
+/** How long the room's first line waits for it — a call connecting. */
+const FIRST_LINE_WAIT_MS = 15_000;
+
+/** M11's voice state, waiting up to `ms` while it says "loading". */
+async function serverVoiceStateWhenLoaded(ms: number): Promise<ServerVoiceState> {
+  let state = await serverVoiceState();
+  for (let waited = 0; state === "loading" && waited < ms; waited += 1500) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    forgetServerVoiceState();
+    state = await serverVoiceState();
+  }
+  return state;
 }
 
 function writePreference(on: boolean) {
@@ -272,6 +319,8 @@ export function useInterviewerVoice(
   const useServer = options.server !== false;
   /** Which voice this room speaks in — decided at its first line, then kept. */
   const tier = useRef<Tier | null>(null);
+  /** The browser's voice was chosen only because M11 was still loading. */
+  const upgradable = useRef(false);
   const [tierShown, setTierShown] = useState<Tier | null>(null);
   const [serverVoiceName, setServerVoiceName] = useState<string | null>(null);
   /** The server voice's track (v0.29.0): every clip of every line on one
@@ -691,12 +740,29 @@ export function useInterviewerVoice(
         }, wait);
       };
       if (tier.current) {
+        // Started in the browser's voice only because M11 was still loading:
+        // its own voices from the first line after it is ready (2026-10-11).
+        if (tier.current === "browser" && upgradable.current) {
+          void serverVoiceState().then((state) => {
+            if (state === "ready" && upgradable.current) {
+              upgradable.current = false;
+              tier.current = "server";
+              setTierShown("server");
+            }
+            if (gen === generation.current) go(tier.current!);
+          });
+          return;
+        }
         go(tier.current);
         return;
       }
-      // The room's first line decides its voice, for the whole interview.
+      // The room's first line decides its voice. M11 still loading: a call's
+      // moment to connect, then the browser's voice until M11 is ready.
       const decided: Promise<Tier> = useServer
-        ? serverVoiceState().then((state) => (state === "ready" ? "server" : "browser"))
+        ? serverVoiceStateWhenLoaded(FIRST_LINE_WAIT_MS).then((state) => {
+            if (state === "loading") upgradable.current = true;
+            return state === "ready" ? "server" : "browser";
+          })
         : Promise.resolve("browser");
       void decided.then((t) => {
         tier.current ??= t;
