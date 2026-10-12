@@ -59,6 +59,8 @@ const CAMERA = { position: [0, 1.708, 0.46] as const, target: [0, 1.69, 0.04] as
 
 type Renderer = {
   dispose(): void;
+  /** One frame of the renderer's own loop; it asks for the next itself. */
+  render?(): void;
   /** The rig's clips, and one played alone on this head (the state machine
    *  set aside). Both in the renderer since 1.4; absent, the default runs. */
   listClips?(): { name: string; duration: number }[];
@@ -70,6 +72,37 @@ type Renderer = {
     controls?: { target: { set(x: number, y: number, z: number): void } };
   };
 };
+/**
+ * Frames a head draws a second (2026-10-12). The renderer draws at the
+ * display's rate: two heads at 60 took ~1.9 cores, and with the integrated
+ * GPU's share of the laptop's power, live speech was made at 2.2x real time
+ * against 1.0x with photos (Voice_Engine research/listening/heads_cpu.md).
+ * Lip sync is 30 frames a second (wav2arkit's), and a head that is listening
+ * only blinks and nods.
+ */
+export const SPEAKING_FPS = 30;
+export const IDLE_FPS = 15;
+
+/** The renderer's loop, drawing at most `SPEAKING_FPS` while this head speaks
+ *  and `IDLE_FPS` otherwise. Its frame asks for the next through `render`, so
+ *  the pace holds; skipped ticks keep `requestFrameId` current for dispose. */
+function pace(renderer: Renderer, speaking: { current: boolean }): void {
+  const own = renderer.render?.bind(renderer);
+  const viewer = renderer.viewer;
+  if (!own || !viewer) return;
+  let last = 0;
+  const step = (): void => {
+    const now = performance.now();
+    if (now - last >= 1000 / (speaking.current ? SPEAKING_FPS : IDLE_FPS) - 4) {
+      last = now;
+      own();
+    } else {
+      viewer.requestFrameId = requestAnimationFrame(step);
+    }
+  };
+  renderer.render = step;
+}
+
 type RendererClass = {
   create(container: HTMLElement, assetPath: string, options: Record<string, unknown>): Promise<Renderer>;
 };
@@ -206,6 +239,7 @@ export function TalkingHead({
         const clips = made.listClips?.() ?? [];
         const idle = clips.find((clip) => /idle/i.test(clip.name)) ?? clips[0];
         if (idle) made.playClip?.(idle.name, true);
+        pace(made, speakingRef);
         // `create` has started the renderer's own frame loop already.
         setState("ready");
       })
