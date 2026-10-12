@@ -181,7 +181,12 @@ export function sayIdentifiers(text: string): string {
         },
       )
       .replace(/\b([A-Z]{3,})\(\*\)/g, (_, name: string) => `${name.toLowerCase()} star`)
-      .replace(/\blog_([a-z0-9])\b/g, "log base $1")
+      // "log base B of A": as "log base b a" the voices ran the b into the a
+      // ("log base BA", all eight, 2026-10-12); one letter said as a letter.
+      .replace(/\blog_([a-z0-9])\s+([a-z0-9])\b/g, (_, b: string, x: string) =>
+        `log base ${b.toUpperCase()} of ${x.toUpperCase()}`,
+      )
+      .replace(/\blog_([a-z0-9])\b/g, (_, b: string) => `log base ${b.toUpperCase()}`)
       .replace(/\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b/g, said)
       .replace(/\b[A-Z][a-z]+(?:[A-Z][a-z]+)*(?:[A-Z]{2,}|[A-Z][a-z]+)\b/g, (name) =>
         name.replace(/([a-z])([A-Z])/g, "$1 $2"),
@@ -234,7 +239,10 @@ function sayNotation(text: string): string {
     .replace(/([\w)])\s*(>=|<=|!=|>|<)\s*(?=[\w(])/g, (_, before: string, op: string) => `${before} ${compare[op]} `)
     .replace(/(\w+)\s*\^\s*\{([^{}]{1,32})\}/g, (_, b: string, e: string) => `${b} to the power ${e}`)
     .replace(/(\w+)\s*\^\s*(\w+)/g, (_, b: string, e: string) => power(b, e))
-    .replace(/\b([A-Za-z])\(\s*([A-Za-z0-9]{1,3})\s*\)/g, "$1 of $2");
+    // "F of N": "f of n" was heard "F with N" in three voices (2026-10-12).
+    .replace(/\b([A-Za-z])\(\s*([A-Za-z0-9]{1,3})\s*\)/g, (_, f: string, x: string) =>
+      `${f.toUpperCase()} of ${/^[a-z]$/.test(x) ? x.toUpperCase() : x}`,
+    );
 }
 
 /** A line as it should be heard: code and links are on screen, not read out. */

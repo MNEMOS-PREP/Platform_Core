@@ -200,7 +200,7 @@ test("identifiers are said as a person reads them (2026-10-11)", () => {
     "Given a table Employees, with employee ID, name, dept ID and salary, and a table Departments, with dept ID and dept name, write the query.",
   );
   assert.equal(speakable("Use COUNT(*) here."), "Use count star here.");
-  assert.equal(speakable("It takes log_b n steps."), "It takes log base b n steps.");
+  assert.equal(speakable("It takes log_b n steps."), "It takes log base B of N steps.");
   assert.equal(speakable("Sort by order_date, then created_at."), "Sort by order date, then created at.");
   assert.equal(speakable("The `HybridVehicle` class"), "The Hybrid Vehicle class");
   assert.equal(speakable("The AS_PATH attribute"), "The AS PATH attribute");
@@ -209,7 +209,7 @@ test("identifiers are said as a person reads them (2026-10-11)", () => {
   // Ordinary words and O-notation are left alone.
   assert.equal(speakable("Why is lookup O(1) in a hash map?"), "Why is lookup order one in a hash map?");
   assert.equal(speakable("HAVING COUNT(*) > 10"), "HAVING count star greater than 10");
-  assert.equal(speakable("Compare f(n) with n^{log_b a}."), "Compare f of n with n to the power log base b a.");
+  assert.equal(speakable("Compare f(n) with n^{log_b a}."), "Compare F of N with n to the power log base B of A.");
   assert.equal(speakable("Columns OrderID and ProductID"), "Columns Order ID and Product ID");
   assert.equal(speakable("> A quoted line"), "A quoted line");
 });
