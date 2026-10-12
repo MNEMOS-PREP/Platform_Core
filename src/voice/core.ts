@@ -141,6 +141,52 @@ const SAY: [RegExp, string][] = [
 /** Words ending in a full stop that do not end a sentence. */
 const NOT_AN_END = /\b(?:Dr|Mr|Mrs|Ms|Prof|Sr|Jr|St|No)\.$/;
 
+/**
+ * Identifiers as a person reads them aloud (2026-10-11). Given `emp_id`, the
+ * voice said "Benite"; `dept_id`, "deputy". A person reading a schema says
+ * "Employees, with employee ID, name, department ID and salary".
+ *
+ * Shapes, not a word list: the bank is drafted by a model and new names
+ * arrive with every draft. snake_case and PascalCase split into words; a
+ * part `id` said as the acronym; a short part that begins a longer word of
+ * the same question said as that word (`emp` in a question about the table
+ * `Employees` is "employee"); a relation `Name(a, b)` said with its columns;
+ * `COUNT(*)` as "count star"; `log_b` as "log base b". What the voices still
+ * get wrong after this (`dept`, an acronym) is M11's lexicon's, earned by its
+ * read-back probe (research/lexicon/identifiers.py).
+ */
+export function sayIdentifiers(text: string): string {
+  // What a short part may abbreviate: the question's own longer words, its
+  // tables' names first.
+  const tables = [...text.matchAll(/\b([A-Z][A-Za-z]+)\(/g)].map((m) => m[1]!);
+  const words = [...new Set([...tables, ...(text.match(/\b[A-Za-z]{6,}\b/g) ?? [])])];
+  const part = (piece: string): string => {
+    if (/^id$/i.test(piece)) return "ID";
+    if (piece.length < 3 || piece.length > 5 || piece !== piece.toLowerCase()) return piece;
+    const full = words.find((w) => w.length >= piece.length + 3 && w.toLowerCase().startsWith(piece));
+    if (!full) return piece;
+    return (/[^s]s$/i.test(full) ? full.slice(0, -1) : full).toLowerCase();
+  };
+  const said = (name: string) => name.split("_").filter(Boolean).map(part).join(" ");
+  return (
+    text
+      // A relation and its columns, then a pause before what follows.
+      .replace(
+        /\b([A-Z][A-Za-z]+)\(\s*([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)+)\s*\)/g,
+        (match: string, table: string, columns: string, at: number, whole: string) => {
+          const list = columns.split(/\s*,\s*/).map(said);
+          const next = whole.charAt(at + match.length);
+          const pause = next && !/[.,;:!?)]/.test(next) ? "," : "";
+          return `${table}, with ${list.slice(0, -1).join(", ")} and ${list.at(-1)}${pause}`;
+        },
+      )
+      .replace(/\b([A-Z]{3,})\(\*\)/g, (_, name: string) => `${name.toLowerCase()} star`)
+      .replace(/\blog_([a-z0-9])\b/g, "log base $1")
+      .replace(/\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b/g, said)
+      .replace(/\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b/g, (name) => name.replace(/([a-z])([A-Z])/g, "$1 $2"))
+  );
+}
+
 /** A line as it should be heard: code and links are on screen, not read out. */
 export function speakable(text: string): string {
   let out = text
@@ -152,6 +198,7 @@ export function speakable(text: string): string {
       `O of ${inner.replace(/\^\s*2\b/g, " squared").replace(/\^\s*3\b/g, " cubed")}`,
     )
     .replace(/\n\s*[-•*]\s+/g, ". ");
+  out = sayIdentifiers(out);
   for (const [pattern, said] of SAY) out = out.replace(pattern, said);
   return out
     .replace(/[*_#>|]+/g, " ")

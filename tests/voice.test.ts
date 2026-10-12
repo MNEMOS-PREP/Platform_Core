@@ -107,7 +107,8 @@ test("complexity, languages and abbreviations are said the way people say them",
   assert.match(speakable("Is O(n^2) acceptable?"), /O of n squared/);
   assert.match(speakable("Have you used C++ or C#?"), /C plus plus or C sharp/);
   assert.match(speakable("A hash map, e.g. a dict"), /for example/);
-  assert.equal(speakable("Use the `HashMap` class"), "Use the HashMap class");
+  // 2026-10-11: a PascalCase name is said as its words.
+  assert.equal(speakable("Use the `HashMap` class"), "Use the Hash Map class");
 });
 
 test("long text is split into sentences short enough to speak whole", () => {
@@ -186,6 +187,26 @@ test("where the student came in over a panel's line (FR-11.9)", () => {
   assert.ok(Math.abs(second.heard - 11 / 23) < 1e-9);
   assert.deepEqual(cutAt(ranges, 99), { partId: "t:1", heard: 1 }, "past the end: all heard");
   assert.deepEqual(cutAt([], 5), { partId: null, heard: 0 });
+});
+
+
+test("identifiers are said as a person reads them (2026-10-11)", () => {
+  // The user's demo: `emp_id` was heard as "Benite", `dept_id` as "deputy".
+  assert.equal(
+    speakable(
+      "Given a table Employees(emp_id, name, dept_id, salary) and a table Departments(dept_id, dept_name), write the query.",
+    ),
+    "Given a table Employees, with employee ID, name, dept ID and salary, and a table Departments, with dept ID and dept name, write the query.",
+  );
+  assert.equal(speakable("Use COUNT(*) here."), "Use count star here.");
+  assert.equal(speakable("It takes log_b n steps."), "It takes log base b n steps.");
+  assert.equal(speakable("Sort by order_date, then created_at."), "Sort by order date, then created at.");
+  assert.equal(speakable("The `HybridVehicle` class"), "The Hybrid Vehicle class");
+  assert.equal(speakable("The AS_PATH attribute"), "The AS PATH attribute");
+  // A short part is said as the longer word only when the question has one.
+  assert.equal(speakable("Each emp_id is unique."), "Each emp ID is unique.");
+  // Ordinary words and O-notation are left alone.
+  assert.equal(speakable("Why is lookup O(1) in a hash map?"), "Why is lookup O of 1 in a hash map?");
 });
 
 console.log(`\n${passed} passed`);
