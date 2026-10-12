@@ -103,8 +103,9 @@ test("code and links are on screen, not read out", () => {
 });
 
 test("complexity, languages and abbreviations are said the way people say them", () => {
-  assert.equal(speakable("Can you do it in O(n log n)?"), "Can you do it in O of n log n?");
-  assert.match(speakable("Is O(n^2) acceptable?"), /O of n squared/);
+  // Big-O as M11's probe found every voice says it (2026-10-12).
+  assert.equal(speakable("Can you do it in O(n log n)?"), "Can you do it in order N log N?");
+  assert.match(speakable("Is O(n^2) acceptable?"), /order N squared/);
   assert.match(speakable("Have you used C++ or C#?"), /C plus plus or C sharp/);
   assert.match(speakable("A hash map, e.g. a dict"), /for example/);
   // 2026-10-11: a PascalCase name is said as its words.
@@ -206,7 +207,11 @@ test("identifiers are said as a person reads them (2026-10-11)", () => {
   // A short part is said as the longer word only when the question has one.
   assert.equal(speakable("Each emp_id is unique."), "Each emp ID is unique.");
   // Ordinary words and O-notation are left alone.
-  assert.equal(speakable("Why is lookup O(1) in a hash map?"), "Why is lookup O of 1 in a hash map?");
+  assert.equal(speakable("Why is lookup O(1) in a hash map?"), "Why is lookup order one in a hash map?");
+  assert.equal(speakable("HAVING COUNT(*) > 10"), "HAVING count star greater than 10");
+  assert.equal(speakable("Compare f(n) with n^{log_b a}."), "Compare f of n with n to the power log base b a.");
+  assert.equal(speakable("Columns OrderID and ProductID"), "Columns Order ID and Product ID");
+  assert.equal(speakable("> A quoted line"), "A quoted line");
 });
 
 console.log(`\n${passed} passed`);

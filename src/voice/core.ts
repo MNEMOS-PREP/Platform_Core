@@ -183,8 +183,58 @@ export function sayIdentifiers(text: string): string {
       .replace(/\b([A-Z]{3,})\(\*\)/g, (_, name: string) => `${name.toLowerCase()} star`)
       .replace(/\blog_([a-z0-9])\b/g, "log base $1")
       .replace(/\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b/g, said)
-      .replace(/\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b/g, (name) => name.replace(/([a-z])([A-Z])/g, "$1 $2"))
+      .replace(/\b[A-Z][a-z]+(?:[A-Z][a-z]+)*(?:[A-Z]{2,}|[A-Z][a-z]+)\b/g, (name) =>
+        name.replace(/([a-z])([A-Z])/g, "$1 $2"),
+      )
   );
+}
+
+/** Small numbers as words, and powers as said ("squared"), as M11's notation.py. */
+const NUMBER_WORDS: Record<string, string> = { "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four", "10": "ten" };
+const POWER_WORDS: Record<string, string> = { "2": "squared", "3": "cubed" };
+/** O( … ) with something short and notation-like inside, not "O(" in prose. */
+const BIG_O = /\b(?:big[- ])?O\s*\(\s*([A-Za-z0-9 ^\u00b2\u00b3+*\u00b7\u00d7/.\-]{1,32}?)\s*\)/g;
+
+function power(base: string, exponent: string): string {
+  const b = NUMBER_WORDS[base.trim()] ?? base.trim();
+  const e = exponent.trim();
+  return e in POWER_WORDS ? `${b} ${POWER_WORDS[e]}` : `${b} to the ${NUMBER_WORDS[e] ?? e}`;
+}
+
+/** What is inside big-O's brackets, as a person says it (M11 notation.spoken). */
+export function notationSpoken(inner: string): string {
+  return inner
+    .replace(/\u00b2/g, "^2")
+    .replace(/\u00b3/g, "^3")
+    .replace(/(\w+)\s*\^\s*(\w+)/g, (_, b: string, e: string) => power(b, e))
+    .replace(/\s*\+\s*/g, " plus ")
+    .replace(/\s*[*\u00b7\u00d7]\s*/g, " times ")
+    .replace(/\s*\/\s*/g, " over ")
+    .replace(/(?<![\w.])(\d+)(?![\w.])/g, (d: string) => NUMBER_WORDS[d] ?? d)
+    .replace(/\b([a-z])\b/g, (l: string) => l.toUpperCase())
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
+ * Notation outside big-O, as said (2026-10-12, the bank's own): a comparison
+ * between operands in words (`HAVING COUNT(*) > 10` lost its ">" as markdown),
+ * a power "to the power", a one-letter function "f of n".
+ */
+function sayNotation(text: string): string {
+  const compare: Record<string, string> = {
+    ">=": "greater than or equal to",
+    "<=": "less than or equal to",
+    "!=": "not equal to",
+    ">": "greater than",
+    "<": "less than",
+  };
+  return text
+    .replace(/([\w)])\s*(>=|<=|!=|>|<)\s*(?=[\w(])/g, (_, before: string, op: string) => `${before} ${compare[op]} `)
+    .replace(/(\w+)\s*\^\s*\{([^{}]{1,32})\}/g, (_, b: string, e: string) => `${b} to the power ${e}`)
+    .replace(/(\w+)\s*\^\s*(\w+)/g, (_, b: string, e: string) => power(b, e))
+    .replace(/\b([A-Za-z])\(\s*([A-Za-z0-9]{1,3})\s*\)/g, "$1 of $2");
 }
 
 /** A line as it should be heard: code and links are on screen, not read out. */
@@ -193,12 +243,13 @@ export function speakable(text: string): string {
     .replace(/```[\s\S]*?(```|$)/g, " The code is on your screen. ")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/https?:\/\/\S+/g, " the link on your screen ")
-    // Big-O as it is said: O(n log n) → "O of n log n", O(n^2) → "O of n squared".
-    .replace(/\bO\(([^()]{1,24})\)/g, (_, inner: string) =>
-      `O of ${inner.replace(/\^\s*2\b/g, " squared").replace(/\^\s*3\b/g, " cubed")}`,
-    )
+    // Big-O as M11's probe found every voice says it clearly: "order N"
+    // (research/notation in Voice_Engine; "O of n" lost what followed the
+    // "O" in most voices). Ported from M11's notation.py, which had been
+    // bypassed: this rewrite ran first, so M11 never saw "O(" (2026-10-12).
+    .replace(BIG_O, (_, inner: string) => `order ${notationSpoken(inner)}`)
     .replace(/\n\s*[-•*]\s+/g, ". ");
-  out = sayIdentifiers(out);
+  out = sayNotation(sayIdentifiers(out));
   for (const [pattern, said] of SAY) out = out.replace(pattern, said);
   return out
     .replace(/[*_#>|]+/g, " ")
