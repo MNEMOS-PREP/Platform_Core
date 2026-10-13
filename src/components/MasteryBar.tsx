@@ -86,6 +86,18 @@ export function isDisplayable(state: MasteryState): boolean {
   return DISPLAYABLE.includes(state);
 }
 
+/**
+ * "6 Oct" this year, "Oct 2025" before it. `shortDate` alone printed "not
+ * checked since Oct 2026" in October 2026, which reads as a typo, and the
+ * longer line pushed the bar under the topic's name.
+ */
+function sinceDate(iso: string): string {
+  const date = new Date(iso);
+  return date.getFullYear() === new Date().getFullYear()
+    ? date.toLocaleDateString(undefined, { day: "numeric", month: "short" })
+    : shortDate(iso);
+}
+
 function fillWidth(value: MasteryValue): string {
   if (!isDisplayable(value.state)) {
     // "Just started" gets a fixed 20% sliver so the row has a shape without
@@ -105,7 +117,7 @@ function fillWidth(value: MasteryValue): string {
  */
 function detail(value: MasteryValue): string | null {
   if (value.stale && value.last_evidence_at) {
-    return `not checked since ${shortDate(value.last_evidence_at)}`;
+    return `not checked since ${sinceDate(value.last_evidence_at)}`;
   }
   if (value.state === "not_tested") return null;
   if (value.blocks && value.blocks > 1) return `blocks ${value.blocks}`;
@@ -117,11 +129,16 @@ function detail(value: MasteryValue): string | null {
 export function MasteryBar({
   value,
   width = "w-40",
+  labelWidth = "",
   onClick,
 }: {
   value: MasteryValue;
   /** Tailwind width class for the track. Full-width on mobile (§8). */
   width?: string;
+  /** A fixed width for the words after the bar, for a list of bars: each
+   *  label is a different length, and without it every bar in a column
+   *  started at a different x (2026-10-13). Empty: as wide as the words. */
+  labelWidth?: string;
   /** Tapping a bar opens the evidence drawer — Rule 3's escape hatch. */
   onClick?: () => void;
 }) {
@@ -144,7 +161,7 @@ export function MasteryBar({
           />
         )}
       </span>
-      <span className={`text-xs ${stale ? "text-ink-faint" : "text-ink-soft"}`}>
+      <span className={`text-xs ${labelWidth} ${stale ? "text-ink-faint" : "text-ink-soft"}`}>
         {label}
         {suffix && <span className="text-ink-faint"> · {suffix}</span>}
       </span>
