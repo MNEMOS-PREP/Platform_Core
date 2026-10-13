@@ -28,6 +28,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { faceDriver, type Expression, type HeadPose } from "../voice/face";
+import { officeBackdropCss, officeBackdropImage } from "./officeBackdrop";
 
 export interface TalkingHeadProps {
   /** M06's persona id; the head is M11's `/v1/voice/faces/{persona}.zip`. */
@@ -70,6 +71,9 @@ type Renderer = {
     requestFrameId?: number;
     camera?: { position: { set(x: number, y: number, z: number): void }; lookAt(x: number, y: number, z: number): void };
     controls?: { target: { set(x: number, y: number, z: number): void } };
+    /** What the viewer draws before the head: a background set on it shows
+     *  behind the splats. It is drawn only while it has a visible child. */
+    threeScene?: { background: unknown; add(child: unknown): void };
   };
 };
 /**
@@ -105,6 +109,14 @@ function pace(renderer: Renderer, speaking: { current: boolean }): void {
 
 type RendererClass = {
   create(container: HTMLElement, assetPath: string, options: Record<string, unknown>): Promise<Renderer>;
+};
+
+/** The three things of `three` the office backdrop uses. Declared here, not
+ *  imported: an app that installs Core gets `three` but not `@types/three`. */
+type ThreeBits = {
+  CanvasTexture: new (canvas: HTMLCanvasElement) => { colorSpace: unknown; dispose(): void };
+  SRGBColorSpace: unknown;
+  Object3D: new () => unknown;
 };
 
 let loading: Promise<RendererClass> | null = null;
@@ -180,6 +192,7 @@ export function TalkingHead({
     }
     let disposed = false;
     let renderer: Renderer | null = null;
+    let backdrop: { dispose(): void } | null = null;
     // Each mount draws into its own element, removed with its renderer: in
     // React's development double-mount the first renderer is disposed while
     // the second shares the holder, and disposing took the second's canvas.
@@ -201,6 +214,7 @@ export function TalkingHead({
       } catch {
         // Already torn down: nothing left to release.
       }
+      backdrop?.dispose();
       mount.remove();
     };
     // This head's face, frame by frame: the renderer asks for the
@@ -223,12 +237,37 @@ export function TalkingHead({
           backgroundColor: backgroundOf(element),
         }),
       )
-      .then((made) => {
+      .then(async (made) => {
         if (disposed) {
           release(made);
           return;
         }
         renderer = made;
+        // The office behind the head (2026-10-13): the renderer clears to a
+        // flat colour on a canvas with no alpha, so the room is the scene's
+        // own background instead. The viewer draws its scene only when it
+        // has something visible in it, hence the empty object. `three` is
+        // the renderer's own copy (a shared dependency), loaded with it.
+        try {
+          const room = await officeBackdropImage(persona);
+          const scene = made.viewer?.threeScene;
+          if (room && scene) {
+            // The app that shows the head may not carry three's types.
+            // @ts-ignore
+            const three = (await import("three")) as unknown as ThreeBits;
+            if (!disposed) {
+              const texture = new three.CanvasTexture(room);
+              texture.colorSpace = three.SRGBColorSpace;
+              scene.background = texture;
+              scene.add(new three.Object3D());
+              backdrop = texture;
+            }
+          }
+        } catch {
+          // No room: the head keeps the tile's own colour.
+        }
+        // Disposed during the import: the cleanup has released `made`.
+        if (disposed) return;
         const camera = made.viewer?.camera;
         if (camera) {
           camera.position.set(...CAMERA.position);
@@ -254,7 +293,8 @@ export function TalkingHead({
 
   return (
     <div
-      className={`relative overflow-hidden bg-surface-sunken ${className}`}
+      className={`relative overflow-hidden bg-surface-sunken bg-cover bg-center ${className}`}
+      style={{ backgroundImage: officeBackdropCss(persona) || undefined }}
       role="img"
       aria-label={`${name}, an AI-generated interviewer${speaking ? ", speaking" : ""}`}
     >
