@@ -14,6 +14,8 @@
  */
 import { useState } from "react";
 
+import { officeBackdropCss } from "./officeBackdrop";
+
 export interface InterviewerPhotoProps {
   /** M06's persona id: the photo is `/v1/voice/faces/{persona}.webp`. */
   persona: string;
@@ -25,6 +27,9 @@ export interface InterviewerPhotoProps {
   speaking?: boolean;
   /** Fill the parent (a tile) instead of a circle. */
   fill?: boolean;
+  /** With `fill`: sit the person in the virtual office rather than on the
+   *  theme's flat colour, as the 3D head is (`TalkingHead`). */
+  backdrop?: boolean;
   className?: string;
 }
 
@@ -54,6 +59,7 @@ export function InterviewerPhoto({
   size = 36,
   speaking = false,
   fill = false,
+  backdrop = false,
   className = "",
 }: InterviewerPhotoProps) {
   const [failed, setFailed] = useState(() => !persona || missing.has(persona));
@@ -64,8 +70,13 @@ export function InterviewerPhoto({
   };
 
   if (fill) {
+    const room = backdrop && !failed ? officeBackdropCss(persona) : "";
     return (
-      <div className={`relative h-full w-full overflow-hidden bg-surface-sunken ${className}`} title={label}>
+      <div
+        className={`relative h-full w-full overflow-hidden bg-surface-sunken ${room ? "bg-cover bg-center" : ""} ${className}`}
+        style={room ? { backgroundImage: room } : undefined}
+        title={label}
+      >
         {failed ? (
           <span className="absolute inset-0 grid place-items-center text-3xl font-semibold text-ink-faint">
             {initialsOf(name)}
