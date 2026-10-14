@@ -60,7 +60,7 @@ __all__ = [
 class Role(StrEnum):
     """What kind of caller this is.
 
-    Four, and the list is closed on purpose: a role added in one module is a
+    Five, and the list is closed on purpose: a role added in one module is a
     role the other eighteen do not know how to refuse.
     """
 
@@ -73,6 +73,11 @@ class Role(StrEnum):
     researcher = "researcher"
     #: Operations. Sees everything, and every access is worth logging.
     admin = "admin"
+    #: Faculty or a senior who reviews drafted questions (M05 FR-5.6) and rates
+    #: answers (M13). Cohort-level on student data, like a researcher, and
+    #: deliberately NOT a placement officer: it opens the review tools and none
+    #: of the placement cell's.
+    reviewer = "reviewer"
 
 
 @dataclass(frozen=True)
@@ -158,6 +163,9 @@ def may_see(principal: Principal | None, candidate_id: str) -> Decision:
             Access.aggregate_only,
             "Placement staff see cohort figures. An individual view needs the student to share it.",
         )
+
+    if principal.role is Role.reviewer:
+        return Decision(Access.aggregate_only, "Reviewers see questions, not students.")
 
     return Decision(Access.aggregate_only, "Research access is cohort-level only.")
 

@@ -80,6 +80,7 @@ export {
   candidateIdOf,
   ensureSession,
   getSession,
+  canReview,
   isStaff,
   sessionHeaders,
   signIn,

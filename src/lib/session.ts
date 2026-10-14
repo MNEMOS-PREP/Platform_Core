@@ -24,8 +24,8 @@ import { setIdentityHeaders } from "./api";
 
 /** `ai_core.identity.Role`. Closed, as there: a role one screen invents is a
  *  role eighteen backends cannot refuse. */
-export type Role = "student" | "placement_officer" | "researcher" | "admin";
-export const ROLES: readonly Role[] = ["student", "placement_officer", "researcher", "admin"];
+export type Role = "student" | "placement_officer" | "researcher" | "admin" | "reviewer";
+export const ROLES: readonly Role[] = ["student", "placement_officer", "researcher", "admin", "reviewer"];
 /** Who staff screens are for. Matches the backends' `require_role` gates. */
 export const STAFF_ROLES: readonly Role[] = ["placement_officer", "admin"];
 
@@ -34,6 +34,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   placement_officer: "Placement officer",
   researcher: "Researcher",
   admin: "Administrator",
+  reviewer: "Reviewer",
 };
 
 export interface Session {
@@ -182,6 +183,11 @@ export function useSession(): Session | null {
 /** The candidate this session IS, when it is a student's. */
 export function candidateIdOf(session: Session | null = current): string | null {
   return session?.role === "student" ? session.subject : null;
+}
+
+/** Who may use the question-review screens (M05 FR-5.6): staff and reviewers. */
+export function canReview(session: Session | null = current): boolean {
+  return session !== null && (STAFF_ROLES.includes(session.role) || session.role === "reviewer");
 }
 
 export function isStaff(session: Session | null = current): boolean {
