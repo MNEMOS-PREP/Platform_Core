@@ -124,6 +124,17 @@ def test_an_admin_sees_everything():
     assert may_see(admin, STUDENT).access is Access.full
 
 
+def test_a_reviewer_sees_questions_not_students():
+    """v0.38.0: faculty and seniors review M05's drafts and rate M13's answers.
+    No student's record is part of that, so not even a placement officer's
+    view; and the reason a screen shows says what a reviewer is for."""
+    reviewer = Principal(subject="faculty-1", role=Role.reviewer)
+
+    decision = may_see(reviewer, STUDENT)
+    assert decision.access is Access.aggregate_only
+    assert "questions" in decision.reason
+
+
 # ---------------------------------------------------------------------------
 #  Resolution
 # ---------------------------------------------------------------------------
