@@ -17,7 +17,7 @@
  * prevent, in its own source: a version string that reports a state of the
  * world it is not in. Move all three in the same commit.
  */
-export const CORE_VERSION = "0.38.0";
+export const CORE_VERSION = "0.39.0";
 
 // ── Provenance: the trust contract ────────────────────────────────────────
 export {
@@ -171,6 +171,8 @@ export { FACE_LOOKAHEAD_S, jawOnly, weightsAt } from "./voice/face";
 export type { Expression, FaceFrames } from "./voice/face";
 export { useInterviewerFaces } from "./voice/useInterviewerFaces";
 export { TalkingHead } from "./components/TalkingHead";
+// v0.39.0: which room each interviewer sits in, chosen per interview.
+export { setBackdropSeed } from "./components/officeBackdrop";
 export type { TalkingHeadProps } from "./components/TalkingHead";
 // v0.29.0: every interviewer's picture is their own photo, never a drawn face.
 export { InterviewerPhoto, initialsOf, photoUrl } from "./components/InterviewerPhoto";

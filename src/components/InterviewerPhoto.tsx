@@ -14,7 +14,7 @@
  */
 import { useState } from "react";
 
-import { officeBackdropCss } from "./officeBackdrop";
+import { useOfficeBackdrop } from "./officeBackdrop";
 
 export interface InterviewerPhotoProps {
   /** M06's persona id: the photo is `/v1/voice/faces/{persona}.webp`. */
@@ -68,9 +68,11 @@ export function InterviewerPhoto({
     missing.add(persona);
     setFailed(true);
   };
+  // Re-read when M11's rooms arrive (v0.39.0): a tile drawn before them
+  // would otherwise keep the painted room for the whole interview.
+  const room = useOfficeBackdrop(persona, fill && backdrop && !failed);
 
   if (fill) {
-    const room = backdrop && !failed ? officeBackdropCss(persona) : "";
     return (
       <div
         className={`relative h-full w-full overflow-hidden bg-surface-sunken ${room ? "bg-cover bg-center" : ""} ${className}`}

@@ -19,12 +19,17 @@
  * the tile.
  */
 
+import { useSyncExternalStore } from "react";
+
+import { api } from "../lib/api";
+import { pickRoom } from "./backdropPick";
+
 const W = 800;
 const H = 600;
 
 /**
- * Real photographs, when there are any: every image in `src/assets/office/`
- * is a room somebody can sit in, and a persona is given one by their id. With
+ * Bundled photographs, when there are any: every image in `src/assets/office/`
+ * is a room somebody can sit in — used when M11's rooms cannot be had. With
  * none there (or outside Vite, where the glob does not exist) the painted
  * rooms below are used, so nothing is ever missing.
  */
@@ -45,10 +50,79 @@ function photoList(): string[] {
 }
 const PHOTOS = photoList();
 
+/*
+ * v0.39.0 (2026-10-21) — real rooms, a different one each interview.
+ *
+ * The user: "use realistic Zoom-meeting-like backgrounds, around a hundred,
+ * for the 39–40 interviewers, each getting a random one every time". The
+ * photographs live with the interviewers' photos in M11
+ * (`GET /v1/voice/backdrops`, open licences in its `backdrops/CREDITS.md`),
+ * not in this package that every module installs. The list is asked for once
+ * a page. Which room a person gets is seeded by the interview
+ * (`setBackdropSeed`, which a room calls with its session id; a random seed
+ * per page otherwise): the same interview keeps its rooms through a reload,
+ * the next one redecorates, and nobody on a panel shares a room
+ * (`backdropPick.ts`). With M11 down, the photos in `src/assets/office/` and
+ * then the painted rooms below stand in, so nothing is ever missing.
+ */
+let served: string[] = [];
+let asking: Promise<string[]> | null = null;
+let seed = `page-${Math.random().toString(36).slice(2)}`;
+/** Who sits in which room, this interview. */
+const seated = new Map<string, string>();
+const listeners = new Set<() => void>();
+
+function changed(): void {
+  for (const listener of listeners) listener();
+}
+
+function servedRooms(): Promise<string[]> {
+  asking ??= api
+    .get<{ backdrops?: { url: string }[] }>("/v1/voice/backdrops")
+    .then((body) => {
+      served = (body.backdrops ?? []).map((room) => room.url).filter(Boolean);
+      if (served.length) {
+        seated.clear();
+        changed();
+      }
+      return served;
+    })
+    .catch(() => served);
+  return asking;
+}
+
+/** The interview the rooms are chosen for: a room calls it with its session
+ *  id before its tiles are drawn, so a reload keeps the same rooms. */
+export function setBackdropSeed(value: string): void {
+  if (!value || value === seed) return;
+  seed = value;
+  seated.clear();
+  changed();
+}
+
 function photoFor(persona: string): string | null {
-  if (PHOTOS.length === 0) return null;
-  const rnd = seeded(persona + ":photo");
-  return PHOTOS[Math.floor(rnd() * PHOTOS.length) % PHOTOS.length] ?? null;
+  const pool = served.length ? served : PHOTOS;
+  const held = seated.get(persona);
+  if (held && pool.includes(held)) return held;
+  const room = pickRoom(pool, seed, persona, new Set(seated.values()));
+  if (room) seated.set(persona, room);
+  return room;
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  void servedRooms();
+  return () => listeners.delete(listener);
+}
+
+/** `officeBackdropCss`, re-read when M11's rooms arrive or the interview
+ *  changes — for a tile drawn before either. */
+export function useOfficeBackdrop(persona: string, enabled = true): string {
+  return useSyncExternalStore(
+    subscribe,
+    () => (enabled ? officeBackdropCss(persona) : ""),
+    () => "",
+  );
 }
 
 /** A seeded stream of numbers in [0, 1): the same id, the same room. */
@@ -263,11 +337,17 @@ export function officeBackdrop(persona: string): HTMLCanvasElement | null {
 /** The room as a canvas, a photograph where there is one (a little out of
  *  focus, so the face is the sharpest thing in the tile) and the painted room
  *  otherwise. Resolves to null only where no canvas can be made. */
-export function officeBackdropImage(persona: string): Promise<HTMLCanvasElement | null> {
+export async function officeBackdropImage(persona: string): Promise<HTMLCanvasElement | null> {
+  // The 3D head's room is made once, as it loads: wait for M11's list so it
+  // is the same photograph the tile behind it shows.
+  await servedRooms();
   const url = photoFor(persona);
-  if (!url || typeof document === "undefined") return Promise.resolve(officeBackdrop(persona));
+  if (!url || typeof document === "undefined") return officeBackdrop(persona);
   return new Promise((resolve) => {
     const image = new Image();
+    // Same origin through the proxy; set anyway, so a canvas made from an
+    // M11 on another origin (VITE_API_BASE) is not tainted for WebGL.
+    image.crossOrigin = "anonymous";
     image.onload = () => {
       const canvas = document.createElement("canvas");
       canvas.width = W;

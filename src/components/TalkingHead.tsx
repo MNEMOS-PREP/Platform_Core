@@ -28,7 +28,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { faceDriver, type Expression, type HeadPose } from "../voice/face";
-import { officeBackdropCss, officeBackdropImage } from "./officeBackdrop";
+import { officeBackdropImage, useOfficeBackdrop } from "./officeBackdrop";
 
 export interface TalkingHeadProps {
   /** M06's persona id; the head is M11's `/v1/voice/faces/{persona}.zip`. */
@@ -171,6 +171,9 @@ export function TalkingHead({
   label = true,
 }: TalkingHeadProps) {
   const holder = useRef<HTMLDivElement>(null);
+  // The room behind the tile while the head loads, the same photograph the
+  // head's scene is given (v0.39.0).
+  const room = useOfficeBackdrop(persona);
   const [state, setState] = useState<"loading" | "ready" | "failed">(() =>
     typeof document !== "undefined" && webglAvailable() ? "loading" : "failed",
   );
@@ -294,7 +297,7 @@ export function TalkingHead({
   return (
     <div
       className={`relative overflow-hidden bg-surface-sunken bg-cover bg-center ${className}`}
-      style={{ backgroundImage: officeBackdropCss(persona) || undefined }}
+      style={{ backgroundImage: room || undefined }}
       role="img"
       aria-label={`${name}, an AI-generated interviewer${speaking ? ", speaking" : ""}`}
     >
