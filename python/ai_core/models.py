@@ -67,8 +67,10 @@ __all__ = [
 USER_AGENT = "AI-Interviewer/1.0 (+https://github.com/MNEMOS-PREP)"
 
 #: What kind of work a call is. A module picks one of these; it does not pick a
-#: model. The names are the master plan's tiers (§47.1).
-Tier = Literal["generation", "extraction", "classification", "guard"]
+#: model. The names are the master plan's tiers (§47.1), plus `writing`
+#: (v0.40.0): long prose a student reads after the fact, off every request
+#: path — where seconds are cheap and a vaguer sentence is not.
+Tier = Literal["generation", "extraction", "classification", "guard", "writing"]
 
 
 @dataclass(frozen=True)
@@ -107,8 +109,10 @@ PROVIDERS: dict[str, Provider] = {
         key_env=("NVIDIA_API_KEYS", "NVIDIA_API_KEY"),
         note=(
             "Keys are valid; the endpoint is unreachable from some networks — TCP 443 "
-            "connects and the request then hangs until timeout. Left configured so it is "
-            "one env var away where it does work."
+            "connects and the request then hangs until timeout. Reachable on 2026-10-24, "
+            "but most of its catalogue is not: /models lists ids that answer 404 "
+            "'Function not found' or hang (mistral-large-2, nemotron-super, kimi, glm, "
+            "deepseek, gemma, ...). Listed is not served — probe an id before adding it."
         ),
     ),
 }
@@ -135,9 +139,10 @@ class Model:
     note: str = ""
 
 
-#: Verified against the live account on 2026-08-25 by listing `/models` and
-#: issuing a real structured-output call to each. Anything not on this list has
-#: not been checked, whatever a provider's documentation says.
+#: Verified against the live account on 2026-08-25 (NIM's on 2026-10-24) by
+#: listing `/models` and issuing a real structured-output call to each.
+#: Anything not on this list has not been checked, whatever a provider's
+#: documentation says.
 MODELS: dict[str, Model] = {
     "openai/gpt-oss-120b": Model(
         id="openai/gpt-oss-120b",
@@ -164,6 +169,19 @@ MODELS: dict[str, Model] = {
         provider="groq",
         json_schema=False,
         note="Smaller guard. Use when the 86m is rate-limited.",
+    ),
+    # 2026-10-24, M06's notes comparison (Mock_Interview_Engine
+    # research/notes_models): 12 real and written answers, every status, each
+    # write-up run through the module's own grounding checks.
+    "minimaxai/minimax-m3.1-flash": Model(
+        id="minimaxai/minimax-m3.1-flash",
+        provider="nvidia",
+        json_schema=True,
+        note=(
+            "12/12 strict-schema write-ups passed M06's checks, as gpt-oss-120b's did, "
+            "with concrete next steps where 120b's read like a syllabus. 8-23 s a call "
+            "(120b: ~2 s), so only for work nobody waits on. Off Groq's daily quota."
+        ),
     ),
 }
 
@@ -193,6 +211,10 @@ _TIER_MODEL: dict[str, str] = {
     "extraction": "openai/gpt-oss-20b",
     "classification": "openai/gpt-oss-20b",
     "guard": "meta-llama/llama-prompt-guard-2-86m",
+    # On another provider from the rest on purpose: a module with no NVIDIA
+    # key gets an unusable route with the reason, and falls back to its own
+    # generation-tier job (M06's notes do).
+    "writing": "minimaxai/minimax-m3.1-flash",
 }
 
 #: Overrides the model for one tier across the whole platform, without an edit.
@@ -256,7 +278,17 @@ def resolve(tier: Tier, *, job_env: str | None = None) -> Route:
     truthiness once and degrades, which is Rule 2 at the smallest possible
     scale: no key narrows what a module can offer, and says so.
     """
-    model_id = model_for(tier, job_env=job_env)
+    try:
+        model_id = model_for(tier, job_env=job_env)
+    except KeyError:
+        # A tier from a newer release than this one (`writing` before v0.40.0
+        # was a KeyError out of a module's client constructor, which took
+        # every one of its jobs down with the one that named it).
+        return Route(
+            tier=tier,
+            model="",
+            unusable=f"no tier {tier!r} in this ai_core ({', '.join(_TIER_MODEL)}); upgrade it",
+        )
 
     if model_id in RETIRED:
         return Route(tier=tier, model=model_id, unusable=f"retired: {RETIRED[model_id]}")

@@ -27,7 +27,7 @@ def _no_ambient_config(monkeypatch):
     for provider in models.PROVIDERS.values():
         for name in provider.key_env:
             monkeypatch.delenv(name, raising=False)
-    for tier in ("generation", "extraction", "classification", "guard"):
+    for tier in models._TIER_MODEL:
         monkeypatch.delenv(f"AI_MODEL_{tier.upper()}", raising=False)
 
 
@@ -43,9 +43,15 @@ def test_every_tier_points_at_a_model_the_roster_describes():
     report it as "no key" — sending somebody to check their credentials for a
     typo in a dict.
     """
-    for tier in ("generation", "extraction", "classification", "guard"):
-        model_id = models.model_for(tier)
+    for tier in models._TIER_MODEL:
+        model_id = models.model_for(tier)  # type: ignore[arg-type]
         assert model_id in models.MODELS, f"tier {tier!r} points at unknown {model_id!r}"
+
+
+def test_the_tier_literal_and_the_table_agree():
+    """A tier added to one and not the other is a type checker that accepts a
+    name `resolve` cannot route, or a table entry nobody can name."""
+    assert set(models.Tier.__args__) == set(models._TIER_MODEL)
 
 
 def test_every_model_names_a_provider_that_exists():
@@ -157,6 +163,41 @@ def test_an_unknown_model_says_where_to_add_it(monkeypatch):
     assert not route
     assert route.unusable is not None
     assert "ai_core.models" in route.unusable
+
+
+def test_the_writing_tier_routes_to_nim_and_says_which_key_it_needs(monkeypatch):
+    """The writing tier is on NVIDIA's endpoint; a Groq key alone must leave it
+    unusable with the reason, so a caller falls back rather than 401s."""
+    monkeypatch.setenv("GROQ_API_KEYS", "groq-only")
+    route = models.resolve("writing")
+    assert not route
+    assert route.unusable is not None and "NVIDIA_API_KEY" in route.unusable
+
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-key")
+    route = models.resolve("writing")
+    assert route
+    assert route.provider is not None and route.provider.name == "nvidia"
+    assert route.profile is not None and route.profile.json_schema
+    assert route.keys == ["nim-key"]
+
+
+def test_an_unknown_tier_is_a_stated_reason_rather_than_an_exception():
+    """A module written against a newer release than it has installed names a
+    tier this one lacks. Before v0.40.0 that was a KeyError from `resolve`,
+    and a module that resolves every job up front lost all of them."""
+    route = models.resolve("from_the_future")  # type: ignore[arg-type]
+    assert not route
+    assert route.unusable is not None and "upgrade" in route.unusable
+
+
+def test_a_job_override_still_reaches_a_tier_this_release_lacks(monkeypatch):
+    """The job's own env var is checked before the table, so it routes even
+    where the tier does not exist."""
+    monkeypatch.setenv("GROQ_API_KEYS", "k")
+    monkeypatch.setenv("M06_MODEL_NOTES", "openai/gpt-oss-120b")
+    route = models.resolve("from_the_future", job_env="M06_MODEL_NOTES")  # type: ignore[arg-type]
+    assert route
+    assert route.model == "openai/gpt-oss-120b"
 
 
 def test_the_user_agent_is_not_left_to_urllib():
