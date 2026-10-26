@@ -74,20 +74,41 @@ will disagree, and the disagreement will be a leak rather than a bug.
 
 **The rollout, which is the part that actually closes the hole:**
 
-- ⬜ **Each module takes the dependency and calls `may_see` on every
+- 🟡 **Each module takes the dependency and calls `may_see` on every
       candidate-scoped route.** Nineteen repos; the contract means each is a
-      small change rather than a design.
-- ⬜ **Login and signup in `Platform_Shell`**, with the session available to
+      small change rather than a design. **v0.10.0 made it one line:**
+      `dependencies=[Depends(candidate_guard(owners))]` on the router
+      (`ai_core.guard`) — M01, M02 and M06 had each written the same twenty
+      lines by hand, and the copies had started to differ on `session_id`.
+
+      **✅ Every built module, 2026-10-02** (v0.11.0): M01, M02, M04, M05,
+      M06, M13 and M15 take `candidate_guard` on the router and run
+      `assert_refuses_strangers` in their own suites. M01, M02 and M06
+      dropped their hand-written copies.
+- ✅ **Staff routes check a role** (v0.12.0, `require_role`). A route that names
+      no student — a review queue, an ops log — was let through by the guard
+      above, so M13's dispute queue and M15's `/admin/*` answered anyone.
+- ✅ **Module-to-module calls prove themselves** (v0.12.0, `ai_core.service`).
+      One secret, read one way; with nothing configured, a machine secret every
+      module on the host shares, so nothing is open on a fresh clone.
+- 🟡 **Login and signup in `Platform_Shell`**, with the session available to
       every mounted module UI, replacing each module's local candidate control.
+      **v0.12.0 ships the session half:** `getSession()` / `useSession()` /
+      `signIn()` in `@ai/core`, read by every module, and a DEV sign-in screen
+      in the shell (pick a role). The provider half below is still open.
       Specified below — it is the half of this item with no owner and no
       design, and every module that ships before it is another call site to
       change afterwards.
 - ⬜ **`candidate_id` stops being a URL parameter** for student-facing reads.
       "My resumes" means the caller's, derived from the session — never from a
       value the caller typed.
-- ⬜ **A test every module can import** that asserts a candidate-scoped endpoint
+- ✅ **A test every module can import** that asserts a candidate-scoped endpoint
       refuses an unauthenticated request. A shared check, because nineteen
-      hand-written ones is nineteen chances to forget.
+      hand-written ones is nineteen chances to forget. **v0.10.0:**
+      `ai_core.testing.assert_refuses_strangers(client, app)`. It takes no route
+      list — it reads the app's OpenAPI paths, so the route added next month is
+      checked by the test written today — and asks each route as nobody and as
+      another student. It fails if it finds nothing to check.
 
 ### The login screen, specified
 
@@ -115,7 +136,7 @@ nineteenth copy of the thing this file exists to prevent.
       `auth_provider_id` stored rather than the provider's whole identity, and
       OIDC for college Google Workspace SSO in Phase 3. Take that, keep it
       swappable, do not build password hashing.
-- ⬜ **One session, read by every mounted module.** The shell already forces one
+- ✅ **One session, read by every mounted module.** (v0.12.0) The shell already forces one
       React instance and one token set; the session belongs beside them. A
       module asks the shell who is asking — it does not read a cookie itself.
 - ⬜ **`candidate_id` stops being a URL parameter for student-facing reads**
@@ -163,3 +184,45 @@ Two reasons it gets worse with time:
    risky claims — cannot be *enforced* by anyone, only answered. The ethics
    sign-off and the placement cell's policy both land on a system that cannot
    act on either.
+
+---
+
+## 2. ⬜ The model-key loader is written six times — eight by 2026-10-26.
+
+M01 (`llm.py`), M02 (`llm.py`), M04, M06, M13 and M15 (`keys.py`) each read
+`keys.txt` / `.env` with their own copy of the same twenty lines. The copies
+had already drifted: M02 and M06 read the shared `keys.txt` beside the repos
+and `AI_KEYS_FILE`, and the other four did not — so on a fresh demo machine,
+where that shared file is the only one, M13 found no model and scored
+nothing. All six read the same places since 2026-10-03, each pinned by a test,
+and `Platform_Shell/start.bat` reports where each module will find its key.
+
+**What it needs:** `ai_core.keys.load_keys(__file__)` with those roots, and
+the six copies deleted on each module's next bump — the same move as
+`ai_core.service` made for the service secret.
+
+**Still open, 2026-10-26:** M11 (`keys.py`, `app.py`) has its own copy now, and
+`ai_core.models` reads the same file for its providers — eight readers of one
+file. Unchanged otherwise.
+
+---
+
+## 3. 🟡 Timestamps leave every module without their zone.
+
+SQLite hands a `DATETIME` back naive, and every module serialises what it read,
+so the wire carries `"2026-10-22T19:51:04.954538"` — no `Z`, no offset.
+`ai_core.timeutil` says *"isoformat, for anything that crosses a wire"*;
+response models do not call it. A browser reads a timestamp with no zone as
+**local** time, 5½ hours early in India: an interview at 1:21 a.m. on the 23rd
+was the 22nd on the student's streak (Today, the rail's streak chip, "this
+week"), and any date shown for a time after 6:30 p.m. UTC moved back a day.
+Found by the 2026-10-26 bug sweep: M06's `/v1/interviews/by-candidate/…` emits
+exactly that string.
+
+- ✅ **Readers, v0.41.0:** `instant()` reads a zoneless timestamp as UTC (a date
+  alone as that local day); `relativeDays` and `shortDate` read through it, and
+  `relativeDays` counts calendar days. The shell's streak arithmetic, My
+  answers, History and Settings use it (`ed9c41a` / `e51c0e2`).
+- ⬜ **Writers:** every response model's datetimes should leave aware — one
+  annotated type in `ai_core.timeutil` (`AfterValidator(as_utc)`), adopted on
+  each module's next bump — so a reader that is not ours gets it right too.
