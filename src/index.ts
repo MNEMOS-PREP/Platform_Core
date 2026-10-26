@@ -17,7 +17,7 @@
  * prevent, in its own source: a version string that reports a state of the
  * world it is not in. Move all three in the same commit.
  */
-export const CORE_VERSION = "0.40.0";
+export const CORE_VERSION = "0.41.0";
 
 // ── Provenance: the trust contract ────────────────────────────────────────
 export {
@@ -69,7 +69,7 @@ export {
 } from "./components/Page";
 
 // ── Utilities ─────────────────────────────────────────────────────────────
-export { ApiError, api, isOffline, setIdentityHeaders } from "./lib/api";
+export { ApiError, api, detailOf, isOffline, setIdentityHeaders } from "./lib/api";
 
 // ── The session: who is signed in, once per page (v0.12.0) ───────────────
 export {
@@ -92,6 +92,7 @@ export type { Role, Session } from "./lib/session";
 export {
   ANSWER_BAND_LABEL,
   answerBand,
+  instant,
   relativeDays,
   reportCount,
   shortDate,

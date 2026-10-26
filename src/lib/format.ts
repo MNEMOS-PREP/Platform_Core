@@ -1,8 +1,33 @@
 /** Shared formatting helpers. */
 
-export function relativeDays(iso: string | null | undefined): string {
+/**
+ * A server's timestamp as the instant it is (v0.41.0).
+ *
+ * Every module writes UTC, and SQLite hands a timestamp back without its zone
+ * ("2026-10-22T19:51:04"), which a browser reads as LOCAL time: 5½ hours off
+ * in India, enough to put a 1 a.m. interview on the day before and break a
+ * streak. So a timestamp with no zone is UTC. A date alone ("2026-10-22") is
+ * that calendar day where the student is, not midnight in London.
+ */
+export function instant(iso: string): Date {
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (day) return new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]));
+  const zoned = /(?:[zZ]|[+-]\d{2}(?::?\d{2})?)$/.test(iso);
+  return new Date(zoned ? iso : `${iso.replace(" ", "T")}Z`);
+}
+
+function startOfDay(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+/** "today", "yesterday", "3 days ago" — in calendar days where the student is,
+ *  not 24-hour blocks: an answer at 11 last night is "yesterday" at 8 this
+ *  morning (until v0.41.0 it was "today"). */
+export function relativeDays(iso: string | null | undefined, now: Date = new Date()): string {
   if (!iso) return "date unknown";
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  const then = instant(iso);
+  if (Number.isNaN(then.getTime())) return "date unknown";
+  const days = Math.round((startOfDay(now) - startOfDay(then)) / 86_400_000);
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
   if (days < 30) return `${days} days ago`;
@@ -13,7 +38,7 @@ export function relativeDays(iso: string | null | undefined): string {
 
 export function shortDate(iso: string | null | undefined): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(undefined, {
+  return instant(iso).toLocaleDateString(undefined, {
     month: "short",
     year: "numeric",
   });

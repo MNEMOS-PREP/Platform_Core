@@ -6,6 +6,10 @@
  * VITE_API_BASE to the API origin.
  */
 
+import { detailOf } from "./detail";
+
+export { detailOf };
+
 const BASE = import.meta.env.VITE_API_BASE ?? "";
 
 /** A request that never reached the server — no network — as against one
@@ -61,8 +65,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     let detail = response.statusText;
     try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
+      detail = detailOf(await response.json(), detail);
     } catch {
       /* non-JSON error body — keep the status text */
     }
@@ -91,8 +94,7 @@ async function postBlob(
   if (!response.ok) {
     let detail = response.statusText;
     try {
-      const parsed = await response.json();
-      detail = parsed.detail ?? detail;
+      detail = detailOf(await response.json(), detail);
     } catch {
       /* non-JSON error body — keep the status text */
     }
@@ -119,8 +121,7 @@ async function getBlob(path: string, signal?: AbortSignal): Promise<Blob> {
   if (!response.ok) {
     let detail = response.statusText;
     try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
+      detail = detailOf(await response.json(), detail);
     } catch {
       /* non-JSON error body */
     }
