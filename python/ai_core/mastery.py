@@ -149,8 +149,10 @@ def se_effective(
     date the suite ran.
 
     Worked, for `se = 0.30` (where M05 stops a domain): 0.541 at 90 days,
-    0.708 at 183, 0.955 at 365. It crosses the re-test threshold at ~34 days
-    and the display ceiling at ~1 year, which is the behaviour §6.5 describes.
+    0.708 at 183, 0.955 at 365. It crosses the re-test threshold (0.55) at
+    ~94 days — 0.55² = 0.09 + 0.2025·d/90 — and the display ceiling at ~1 year,
+    which is the behaviour §6.5's formula gives. (Until 2026-10-26 this said
+    ~34 days; §2's Moment 5 promises "six weeks later", ~0.43 on this curve.)
     """
     if last_evidence_at is None:
         return SE_PRIOR
