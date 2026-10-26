@@ -187,7 +187,7 @@ Two reasons it gets worse with time:
 
 ---
 
-## 2. ⬜ The model-key loader is written six times.
+## 2. ⬜ The model-key loader is written six times — eight by 2026-10-26.
 
 M01 (`llm.py`), M02 (`llm.py`), M04, M06, M13 and M15 (`keys.py`) each read
 `keys.txt` / `.env` with their own copy of the same twenty lines. The copies
@@ -200,3 +200,29 @@ and `Platform_Shell/start.bat` reports where each module will find its key.
 **What it needs:** `ai_core.keys.load_keys(__file__)` with those roots, and
 the six copies deleted on each module's next bump — the same move as
 `ai_core.service` made for the service secret.
+
+**Still open, 2026-10-26:** M11 (`keys.py`, `app.py`) has its own copy now, and
+`ai_core.models` reads the same file for its providers — eight readers of one
+file. Unchanged otherwise.
+
+---
+
+## 3. 🟡 Timestamps leave every module without their zone.
+
+SQLite hands a `DATETIME` back naive, and every module serialises what it read,
+so the wire carries `"2026-10-22T19:51:04.954538"` — no `Z`, no offset.
+`ai_core.timeutil` says *"isoformat, for anything that crosses a wire"*;
+response models do not call it. A browser reads a timestamp with no zone as
+**local** time, 5½ hours early in India: an interview at 1:21 a.m. on the 23rd
+was the 22nd on the student's streak (Today, the rail's streak chip, "this
+week"), and any date shown for a time after 6:30 p.m. UTC moved back a day.
+Found by the 2026-10-26 bug sweep: M06's `/v1/interviews/by-candidate/…` emits
+exactly that string.
+
+- ✅ **Readers, v0.41.0:** `instant()` reads a zoneless timestamp as UTC (a date
+  alone as that local day); `relativeDays` and `shortDate` read through it, and
+  `relativeDays` counts calendar days. The shell's streak arithmetic, My
+  answers, History and Settings use it (`ed9c41a` / `e51c0e2`).
+- ⬜ **Writers:** every response model's datetimes should leave aware — one
+  annotated type in `ai_core.timeutil` (`AfterValidator(as_utc)`), adopted on
+  each module's next bump — so a reader that is not ours gets it right too.
