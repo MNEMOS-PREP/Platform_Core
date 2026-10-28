@@ -181,6 +181,17 @@ def test_the_writing_tier_routes_to_nim_and_says_which_key_it_needs(monkeypatch)
     assert route.keys == ["nim-key"]
 
 
+def test_the_vision_tier_reads_images_on_groq(monkeypatch):
+    """A picture slide or a scanned page is read by a model that takes images;
+    it is on Groq, so the key every module has is enough."""
+    monkeypatch.setenv("GROQ_API_KEYS", "groq-key")
+    route = models.resolve("vision")
+    assert route
+    assert route.provider is not None and route.provider.name == "groq"
+    assert route.model == "qwen/qwen3.8-27b"
+    assert route.profile is not None and not route.profile.json_schema
+
+
 def test_an_unknown_tier_is_a_stated_reason_rather_than_an_exception():
     """A module written against a newer release than it has installed names a
     tier this one lacks. Before v0.40.0 that was a KeyError from `resolve`,

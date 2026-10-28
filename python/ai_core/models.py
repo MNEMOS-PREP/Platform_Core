@@ -70,7 +70,7 @@ USER_AGENT = "AI-Interviewer/1.0 (+https://github.com/MNEMOS-PREP)"
 #: model. The names are the master plan's tiers (§47.1), plus `writing`
 #: (v0.40.0): long prose a student reads after the fact, off every request
 #: path — where seconds are cheap and a vaguer sentence is not.
-Tier = Literal["generation", "extraction", "classification", "guard", "writing"]
+Tier = Literal["generation", "extraction", "classification", "guard", "writing", "vision"]
 
 
 @dataclass(frozen=True)
@@ -183,6 +183,22 @@ MODELS: dict[str, Model] = {
             "(120b: ~2 s), so only for work nobody waits on. Off Groq's daily quota."
         ),
     ),
+    # 2026-10-28, M20's picture slides (Course_Viva research): the 13 image-only
+    # slides of a 59-page reinforcement-learning deck, read by this and by
+    # RapidOCR on the CPU. This read every word, kept the equations (gamma,
+    # delta, V(S_t) <- ...) and tables, and described the diagrams, in ~1 s;
+    # RapidOCR ran words together, dropped the Greek and interleaved the
+    # columns, in ~4 s. NVIDIA's vision models were gone (410) or hung.
+    "qwen/qwen3.8-27b": Model(
+        id="qwen/qwen3.8-27b",
+        provider="groq",
+        json_schema=False,
+        note=(
+            "Reads images: a slide transcribed whole, ~900 input tokens and ~1 s an "
+            "image. 7,000 input tokens a minute on the free tier, and the limiter "
+            "counts ~2,200 a request: about three images a minute, so pace it."
+        ),
+    ),
 }
 
 
@@ -215,6 +231,8 @@ _TIER_MODEL: dict[str, str] = {
     # key gets an unusable route with the reason, and falls back to its own
     # generation-tier job (M06's notes do).
     "writing": "minimaxai/minimax-m3.1-flash",
+    # Reading a picture: a slide or a scanned page that has no text layer.
+    "vision": "qwen/qwen3.8-27b",
 }
 
 #: Overrides the model for one tier across the whole platform, without an edit.

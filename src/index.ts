@@ -17,7 +17,7 @@
  * prevent, in its own source: a version string that reports a state of the
  * world it is not in. Move all three in the same commit.
  */
-export const CORE_VERSION = "0.41.0";
+export const CORE_VERSION = "0.42.0";
 
 // ── Provenance: the trust contract ────────────────────────────────────────
 export {
