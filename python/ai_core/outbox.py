@@ -326,7 +326,8 @@ class Channel(Generic[R]):
     `send` takes a batch and returns ONE outcome for it, because the upstreams
     that take lists (M04's observations) take them in one transaction — all or
     nothing. A destination that takes one row at a time leaves `batch_key`
-    unset and gets batches of one.
+    unset and gets batches of one. A refused batch is sent again one row at a
+    time, so only the row the upstream will never take is rejected.
 
     `waits_on`, when given, is called once per pass and returns a predicate
     that names why a row must not go yet — M06's evaluation waits for its
@@ -538,25 +539,38 @@ def deliver(
         report.in_flight += len(batch) - len(claimed)
         if not claimed:
             continue
-        try:
-            outcome = channel.send(claimed)
-        except Exception as exc:  # noqa: BLE001 - a sender bug must not strand its claim
-            log.warning("outbox %s: sender raised", channel.name, exc_info=True)
-            outcome = Outcome.retry(f"sender raised {type(exc).__name__}: {exc}")
+        outcome = _send(channel, claimed)
+        parts = [(claimed, outcome)]
+        if outcome.kind == "reject" and len(claimed) > 1:
+            # An upstream that takes the list in one transaction refuses all
+            # of it for one row it will never take. Live (M13 → M04, batched
+            # by student): one observation for an unknown concept held back
+            # every observation that student had, each row showing the other
+            # row's reason. One at a time, only that row is refused, and each
+            # carries its own why.
+            parts = []
+            closed: Outcome | None = None
+            for row in claimed:
+                # Once nobody answers, the rest are not asked: due again, not refused.
+                alone = closed or _send(channel, [row])
+                if alone.kind == "unreachable":
+                    closed = alone
+                parts.append(([row], alone))
 
-        for row in claimed:
-            state = settle(row, outcome, now=now, policy=channel.policy)
-            db.add(row)
-            _tally(report, outcome, state)
-        db.commit()
+        for rows_sent, result in parts:
+            for row in rows_sent:
+                state = settle(row, result, now=now, policy=channel.policy)
+                db.add(row)
+                _tally(report, result, state)
+            db.commit()
 
-        if channel.after is not None:
-            try:
-                channel.after(db, claimed, outcome)
-            except Exception:  # noqa: BLE001 - the delivery happened; say so and go on
-                log.warning("outbox %s: after-hook raised", channel.name, exc_info=True)
+            if channel.after is not None:
+                try:
+                    channel.after(db, rows_sent, result)
+                except Exception:  # noqa: BLE001 - the delivery happened; say so and go on
+                    log.warning("outbox %s: after-hook raised", channel.name, exc_info=True)
 
-        if outcome.kind == "unreachable":
+        if any(result.kind == "unreachable" for _, result in parts):
             # The rest of this pass would find the same closed door, each at
             # the cost of a timeout. Leave them due; the next pass asks again.
             report.circuit_open = True
@@ -565,6 +579,14 @@ def deliver(
     if report.sent and not report.circuit_open:
         _rearm(db, channel.model, now=now, where=where)
     return report
+
+
+def _send(channel: Channel[R], rows: list[R]) -> Outcome:
+    try:
+        return channel.send(rows)
+    except Exception as exc:  # noqa: BLE001 - a sender bug must not strand its claim
+        log.warning("outbox %s: sender raised", channel.name, exc_info=True)
+        return Outcome.retry(f"sender raised {type(exc).__name__}: {exc}")
 
 
 def _tally(report: PassReport, outcome: Outcome, state: str) -> None:

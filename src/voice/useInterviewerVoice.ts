@@ -110,6 +110,7 @@ import {
   type SpokenSentence,
 } from "./server";
 import {
+  NO_AUDIO_AFTER_MS,
   NO_MARKS,
   chunkOffsets,
   heardThrough,
@@ -117,6 +118,7 @@ import {
   newLine,
   nowMs,
   timingsPath,
+  unheardAfterMs,
   type LineTiming,
   type RoomMarks,
   type StopReason,
@@ -249,8 +251,6 @@ type Ready = Sentence & { voice: SpeechSynthesisVoice | null; lang: string; rate
 /** §6.5: a contested barge-in yields after this long. */
 const CONTEST_MS = 1_500;
 
-/** A line with no audio this long after it landed is recorded as unheard. */
-const NO_AUDIO_AFTER_MS = 15_000;
 /** A stopped line whose browser never reports the stop is closed anyway. */
 const STOP_UNREPORTED_AFTER_MS = 1_000;
 
@@ -730,7 +730,12 @@ export function useInterviewerVoice(
         parts: partRanges(chunks, offsets),
       };
       open.current.add(line);
-      line.timer = window.setTimeout(() => close(line), NO_AUDIO_AFTER_MS);
+      const unheard = () => {
+        const left = line.landed_at + unheardAfterMs(line) - nowMs();
+        if (left > 0 && line.first_audio_at === null) line.timer = window.setTimeout(unheard, left);
+        else close(line);
+      };
+      line.timer = window.setTimeout(unheard, NO_AUDIO_AFTER_MS);
       const go = (t: Tier) => {
         if (t === "server") return playOnServer(line, chunks, offsets, gen, key, notBefore);
         const wait = notBefore - nowMs();

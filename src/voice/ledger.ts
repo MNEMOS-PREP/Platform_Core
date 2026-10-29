@@ -115,6 +115,22 @@ export function newLine(init: {
   };
 }
 
+/** A line with no audio this long after it landed is recorded as unheard. */
+export const NO_AUDIO_AFTER_MS = 15_000;
+/** …unless M11 is still making it. On a laptop CPU a long line's first sound
+ *  can come later than that, and recording it as unheard at 15 s lost the
+ *  very wait the ledger is for: two lines of a live mock (2026-10-29) went on
+ *  record with no audio at all, though they were heard, late. */
+export const SERVER_NO_AUDIO_AFTER_MS = 60_000;
+
+/** How long after landing a line with no audio yet is given before it is
+ *  recorded as unheard: a server line nothing has stopped or failed waits
+ *  for its voice; any other gives up at `NO_AUDIO_AFTER_MS`. */
+export function unheardAfterMs(line: Pick<LineTiming, "tier" | "error" | "stop_requested_at">): number {
+  const making = line.tier === "server" && line.error === null && line.stop_requested_at === null;
+  return making ? SERVER_NO_AUDIO_AFTER_MS : NO_AUDIO_AFTER_MS;
+}
+
 /** Where each sentence starts in the line it was cut from, so a word
  *  boundary inside sentence 3 can be placed in the whole line. */
 export function chunkOffsets(line: string, chunks: readonly string[]): number[] {

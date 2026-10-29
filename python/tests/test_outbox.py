@@ -280,6 +280,55 @@ def test_rows_sharing_a_batch_key_go_in_one_send(db):
     assert sorted(len(b) for b in sender.batches) == [1, 2]
 
 
+class AllOrNothing:
+    """An upstream that takes a list in one transaction, as M04 does, and
+    refuses all of it for one row it will never take."""
+
+    def __init__(self, bad: int, down_after: int | None = None):
+        self.bad, self.down_after = bad, down_after
+        self.batches: list[list[int]] = []
+
+    def __call__(self, rows):
+        self.batches.append([r.payload["n"] for r in rows])
+        if self.down_after is not None and len(self.batches) > self.down_after:
+            return Outcome.unreachable("connection refused")
+        if any(r.payload["n"] == self.bad for r in rows):
+            return Outcome.reject(f"http_422: unknown concept: concept:{self.bad}")
+        return Outcome.sent()
+
+
+def test_one_row_the_upstream_refuses_does_not_take_its_batch_down(db):
+    """Live (2026-08 → 10): M13 batches a student's observations into one send
+    to M04; one for an unknown concept refused the lot, and every row showed
+    that one row's reason — the admin page read "unknown concept:
+    concept:hash_maps" beside a communication observation."""
+    rows = _rows(db, 3)
+    sender = AllOrNothing(bad=1)
+
+    report = deliver(db, _channel(sender, batch_key=lambda r: r.group))
+
+    for row in rows:
+        db.refresh(row)
+    assert [r.state for r in rows] == [SENT, REJECTED, SENT]
+    assert [r.last_error for r in rows] == [None, "http_422: unknown concept: concept:1", None]
+    assert sorted(map(len, sender.batches)) == [1, 1, 1, 3]
+    assert (report.sent, report.rejected) == (2, 1)
+
+
+def test_if_the_upstream_goes_down_while_rows_go_one_by_one_the_rest_wait(db):
+    rows = _rows(db, 3)
+    sender = AllOrNothing(bad=0, down_after=1)
+
+    report = deliver(db, _channel(sender, batch_key=lambda r: r.group))
+
+    for row in rows:
+        db.refresh(row)
+    assert [r.state for r in rows] == [PENDING, PENDING, PENDING]
+    assert all(r.claimed_at is None for r in rows)
+    assert len(sender.batches) == 2, "nobody answered: the third is not asked"
+    assert report.circuit_open and report.rejected == 0
+
+
 def test_a_row_waiting_on_something_else_is_left_alone(db):
     """M06: an evaluation must not overtake the artifact it cites."""
     first, second = _rows(db, 2)

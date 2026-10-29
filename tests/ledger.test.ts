@@ -10,7 +10,17 @@
 import assert from "node:assert/strict";
 
 import { speakable, splitSentences } from "../src/voice/core.ts";
-import { NO_MARKS, chunkOffsets, heardThrough, lineId, newLine, timingsPath } from "../src/voice/ledger.ts";
+import {
+  NO_AUDIO_AFTER_MS,
+  NO_MARKS,
+  SERVER_NO_AUDIO_AFTER_MS,
+  chunkOffsets,
+  heardThrough,
+  lineId,
+  newLine,
+  timingsPath,
+  unheardAfterMs,
+} from "../src/voice/ledger.ts";
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -78,6 +88,16 @@ test("line ids are UUIDs, which the server takes as its idempotency key", () => 
 test("a record goes to the interview it was said in, on M11's noun", () => {
   assert.equal(timingsPath("5d0c"), "/v1/voice/5d0c/timings");
   assert.equal(timingsPath("a/b"), "/v1/voice/a%2Fb/timings");
+});
+
+test("a server line still being made is waited for; a failed or stopped one is not", () => {
+  const line = newLine({ id: lineId(), key: "k", voiceName: null, rate: 1, lineChars: 145, landedAt: 0 });
+  assert.equal(unheardAfterMs(line), NO_AUDIO_AFTER_MS, "the browser's voice speaks at once or not at all");
+  line.tier = "server";
+  assert.equal(unheardAfterMs(line), SERVER_NO_AUDIO_AFTER_MS, "M11 on a CPU: a long line's first sound can be late");
+  assert.ok(SERVER_NO_AUDIO_AFTER_MS > NO_AUDIO_AFTER_MS);
+  assert.equal(unheardAfterMs({ ...line, error: "server: 503" }), NO_AUDIO_AFTER_MS);
+  assert.equal(unheardAfterMs({ ...line, stop_requested_at: 9 }), NO_AUDIO_AFTER_MS);
 });
 
 console.log(`\n${passed} passed`);
