@@ -24,6 +24,8 @@
  * here that returns null.
  */
 
+import { useState } from "react";
+
 import { shortDate } from "../lib/format";
 
 export type MasteryState = "not_tested" | "emerging" | "weak" | "adequate" | "strong";
@@ -184,6 +186,9 @@ export function MasteryBar({
   );
 }
 
+/** How many untested concepts show before the rest fold behind "Show more". */
+const PREVIEW = 18;
+
 /**
  * The collapsed count for everything nobody has been asked about yet.
  *
@@ -198,7 +203,10 @@ export function NotYetTested({
   names: string[];
   onStartCheck?: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   if (names.length === 0) return null;
+  const shown = open ? names : names.slice(0, PREVIEW);
+  const hidden = names.length - shown.length;
   return (
     <section className="rounded-lg border border-line bg-surface-sunken/60 p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -213,7 +221,26 @@ export function NotYetTested({
           </button>
         )}
       </div>
-      <p className="mt-2 text-xs leading-relaxed text-ink-faint">{names.join(" · ")}</p>
+      <ul className="mt-3 flex flex-wrap gap-1.5">
+        {shown.map((n) => (
+          <li
+            key={n}
+            className="rounded-full border border-line bg-surface px-2.5 py-1 text-xs text-ink-soft"
+          >
+            {n}
+          </li>
+        ))}
+      </ul>
+      {names.length > PREVIEW && (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="mt-3 text-xs font-medium text-brand hover:text-brand-hover"
+        >
+          {open ? "Show fewer" : `Show ${hidden} more`}
+        </button>
+      )}
     </section>
   );
 }
