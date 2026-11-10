@@ -12,7 +12,7 @@
  * the "AI" mark. Without a photo (M11 down, or a head still being made) the
  * initials stand in — a name, not a made-up face.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useOfficeBackdrop } from "./officeBackdrop";
 
@@ -50,8 +50,21 @@ export function initialsOf(name: string): string {
     .join("");
 }
 
-/** Photos that failed to load, so a page asks M11 once per person. */
-const missing = new Set<string>();
+/** Photos that failed to load, and when — so a page does not ask M11 for one
+ *  again at every render, but does ask again later: kept for good (until
+ *  2026-11-10), a page opened while M11 was loading showed initials for
+ *  every interviewer until a full reload. */
+const missingSince = new Map<string, number>();
+const MISSING_FOR_MS = 15_000;
+/** How many more times a photo shown as initials tries to load. */
+const PHOTO_RETRIES = 4;
+const missing = {
+  has: (persona: string) => {
+    const since = missingSince.get(persona);
+    return since !== undefined && Date.now() - since < MISSING_FOR_MS;
+  },
+  add: (persona: string) => void missingSince.set(persona, Date.now()),
+};
 
 export function InterviewerPhoto({
   persona,
@@ -68,6 +81,18 @@ export function InterviewerPhoto({
     missing.add(persona);
     setFailed(true);
   };
+  // A photo already on screen as initials tries again a few times, so one
+  // that failed while M11 was loading arrives without a reload; a person with
+  // no portrait at all stops asking after that.
+  const retries = useRef(0);
+  useEffect(() => {
+    if (!failed || !persona || retries.current >= PHOTO_RETRIES) return;
+    const timer = window.setTimeout(() => {
+      retries.current += 1;
+      setFailed(false);
+    }, MISSING_FOR_MS);
+    return () => window.clearTimeout(timer);
+  }, [failed, persona]);
   // Re-read when M11's rooms arrive (v0.39.0): a tile drawn before them
   // would otherwise keep the painted room for the whole interview.
   const room = useOfficeBackdrop(persona, fill && backdrop && !failed);

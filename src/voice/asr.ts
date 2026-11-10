@@ -33,18 +33,27 @@ export interface AsrResult {
 }
 
 const FRESH_MS = 30_000;
-let asked: { at: number; state: Promise<boolean> } | null = null;
+/** A failed ask (M11 not reachable) is kept this long, not `FRESH_MS`. */
+const FAILED_MS = 3_000;
+let asked: { at: number; state: Promise<boolean>; ttl: number } | null = null;
 
-/** Can M11 transcribe? One request per page per half-minute, whoever asks. */
+/** Can M11 transcribe? One request per page per half-minute, whoever asks.
+ *  An answer is kept for half a minute; M11 not answering at all only for a
+ *  moment (2026-11-10): kept for the half-minute too, a room opened while M11
+ *  was loading said "type your answer" for half a minute after it was up. */
 export function serverAsrAvailable(): Promise<boolean> {
   const now = Date.now();
-  if (asked && now - asked.at < FRESH_MS) return asked.state;
-  const state = api
+  if (asked && now - asked.at < asked.ttl) return asked.state;
+  const entry = { at: now, ttl: FRESH_MS, state: Promise.resolve(false) };
+  entry.state = api
     .get<{ available: boolean }>("/v1/voice/asr")
     .then((r) => r.available)
-    .catch(() => false);
-  asked = { at: now, state };
-  return state;
+    .catch(() => {
+      entry.ttl = FAILED_MS;
+      return false;
+    });
+  asked = entry;
+  return entry.state;
 }
 
 /** One stretch of the student speaking, as words with times. `context` is the
