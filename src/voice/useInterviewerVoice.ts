@@ -34,8 +34,9 @@
  * Where M11 is running, lines are spoken in the Chatterbox voice M11 casts for
  * the interviewer (`server.ts`), not the browser's. The room asks once whether
  * that voice is ready and keeps the answer for the interview — a voice never
- * changes mid-conversation, except to the browser's if a sentence fails, so a
- * failure costs realism and never sound. Sentences are asked for in speaking
+ * changes mid-conversation, except to the browser's if a sentence fails twice
+ * (for the rest of that line only, since 2026-11-22: the next line asks M11
+ * again — serverRetry.ts), so a failure costs realism and never sound. Sentences are asked for in speaking
  * order, each as soon as the one before it is made (v0.17.1): M11 makes one
  * at a time, so asking for all at once only let them race — a panel's
  * opening was heard to wait five seconds for its first sentence while M11
@@ -97,6 +98,7 @@ import {
 } from "./core";
 import { jawOnly, weightsAt, type Expression, type FaceFrames } from "./face";
 import { SpeechPlayer, type Scheduled } from "./player";
+import { retryOnce } from "./serverRetry";
 import { Rate, endsSentence, holdFor, pauseBetween, sentenceEnd, trimBounds } from "./track";
 import {
   dropOnServer,
@@ -582,15 +584,31 @@ export function useInterviewerVoice(
             clip = await clips[i]!;
           } catch (err) {
             if (gen !== generation.current) return; // a stop cancelled it
-            // The server voice failed mid-line: the rest in the browser's
-            // voice, and the browser's from now on in this room.
-            line.error = `server: ${err instanceof Error ? err.message : "failed"}`.slice(0, 100);
-            tier.current = "browser";
-            setTierShown("browser");
-            forgetServerVoiceState();
-            line.tier = "browser";
-            playInBrowser(line, chunks.slice(i), offsets.slice(i), gen, key);
-            return;
+            // One failed sentence is that sentence's failure (2026-11-22,
+            // serverRetry.ts): asked for once more, and only if M11 fails
+            // again does the rest of THIS line go to the browser's voice. Until
+            // then one failure kept the browser's voice for the whole room.
+            const chunk = chunks[i]!;
+            const again = await retryOnce(
+              () => speakOnServer(chunk.text, { personaId: chunk.personaId, voiceId: chunk.voiceId }, request.signal, line.id),
+              request.signal,
+            );
+            if (gen !== generation.current) return;
+            if (again) {
+              arrived[i] = true;
+              if (again.face) void faceOnServer(again.face);
+              clip = again;
+            } else {
+              line.error = `server: ${err instanceof Error ? err.message : "failed"}`.slice(0, 100);
+              tier.current = "browser";
+              setTierShown("browser");
+              forgetServerVoiceState();
+              // The next line asks M11 again, as after a slow start.
+              upgradable.current = true;
+              line.tier = "browser";
+              playInBrowser(line, chunks.slice(i), offsets.slice(i), gen, key);
+              return;
+            }
           }
           URL.revokeObjectURL(clip.url);
           if (gen !== generation.current) return;
